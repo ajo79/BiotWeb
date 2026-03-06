@@ -47,6 +47,16 @@ const parseBooleanLike = (value: any): boolean | undefined => {
   return undefined;
 };
 
+const parseDisplayBoolean = (value: any): boolean | undefined => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const lowered = value.trim().toLowerCase();
+    if (["true", "yes", "y", "on", "alarm", "active"].includes(lowered)) return true;
+    if (["false", "no", "n", "off", "ok", "normal", "inactive", "none"].includes(lowered)) return false;
+  }
+  return undefined;
+};
+
 const safeJsonParse = (value: any) => {
   if (typeof value !== "string") return null;
   try {
@@ -173,9 +183,10 @@ export default function ExportPage() {
   }, [dashboard.data?.IoTReadings, dashboard.data?.RealTimeDataMonitor]);
 
   const toCell = (value: any) => {
-    const bool = parseBooleanLike(value);
-    if (typeof bool === "boolean") return bool ? "Yes" : "No";
     if (value == null) return "";
+    if (typeof value === "number") return formatNumericLikeCell(value);
+    const displayBool = parseDisplayBoolean(value);
+    if (typeof displayBool === "boolean") return displayBool ? "Yes" : "No";
     if (typeof value === "object") {
       try {
         return JSON.stringify(value);
