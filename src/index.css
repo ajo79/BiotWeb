@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  background: #ffffff;
+  min-height: 100vh;
+  color: #0f172a;
+}
+
+.glass {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 24px rgba(15,23,42,0.08);
+  backdrop-filter: none;
+}
+
+/* Light theme overrides for previously dark utility classes */
+.bg-panel {
+  background-color: #f3f4f6 !important;
+}
+.text-slate-100 {
+  color: #0f172a !important;
+}
+.text-slate-200 {
+  color: #334155 !important;
+}
+
+/* Subtle glow for primary actions */
+.shadow-glow {
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.20) !important;
+}
+
+.shadow-ambient {
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08) !important;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
