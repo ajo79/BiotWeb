@@ -12,9 +12,9 @@ type ExportParam = {
 
 type DynamicColumn = {
   id: string;
+  metricId: string;
   label: string;
   order: number;
-  source: "parameter" | "field";
   fieldKey?: string;
 };
 
@@ -99,6 +99,24 @@ const normalizeParametersForExport = (raw: any): ExportParam[] => {
 const isEnvParam = (param: ExportParam) => {
   const text = `${param.id} ${param.label}`.toLowerCase();
   return text.includes("temp") || text.includes("humid");
+};
+
+const parsePhaseAmp = (text: string) => {
+  const match = text.toLowerCase().match(/(?:press|ph(?:ase)?)\s*[-_ ]?(\d+)\s*amp/);
+  if (!match) return undefined;
+  const phase = Number(match[1]);
+  if (!Number.isFinite(phase)) return undefined;
+  return {
+    phase,
+    metricId: `press_${phase}_amps`,
+    label: `Press ${phase} Amps`,
+  };
+};
+
+const hasMeaningfulValue = (value: any) => {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  return true;
 };
 
 const resolveDeviceName = (row: any) => {
@@ -226,35 +244,41 @@ export default function ExportPage() {
       }
 
       const columnMap = new Map<string, DynamicColumn>();
-      const hasLabel = (label: string) =>
-        Array.from(columnMap.values()).some((col) => col.label.toLowerCase() === label.toLowerCase());
 
       filtered.forEach((row) => {
         const params = normalizeParametersForExport(row?.parameters);
         params.forEach((param) => {
           if (isEnvParam(param)) return;
-          const id = `p:${param.id}`;
+          const amp = parsePhaseAmp(`${param.id} ${param.label}`);
+          const metricId = amp?.metricId ?? `param_${param.id}`;
+          const label = amp?.label ?? param.label;
+          const order = amp ? 10_000 + amp.phase : param.order;
+          const id = `m:${metricId}`;
           if (columnMap.has(id)) return;
           columnMap.set(id, {
             id,
-            label: param.label,
-            order: param.order,
-            source: "parameter",
+            metricId,
+            label,
+            order,
           });
         });
 
         Object.keys(row || {}).forEach((key) => {
-          if (!/^press\s*\d+\s*amps$/i.test(key)) return;
-          if (hasLabel(key)) return;
-          const match = key.match(/press\s*(\d+)/i);
-          const phase = match ? Number(match[1]) : 999;
-          const id = `f:${key.toLowerCase()}`;
-          if (columnMap.has(id)) return;
+          const amp = parsePhaseAmp(key);
+          if (!amp) return;
+
+          const id = `m:${amp.metricId}`;
+          const existing = columnMap.get(id);
+          if (existing) {
+            if (!existing.fieldKey) existing.fieldKey = key;
+            return;
+          }
+
           columnMap.set(id, {
             id,
-            label: key,
-            order: 10_000 + phase,
-            source: "field",
+            metricId: amp.metricId,
+            label: amp.label,
+            order: 10_000 + amp.phase,
             fieldKey: key,
           });
         });
@@ -264,12 +288,22 @@ export default function ExportPage() {
         (a, b) => a.order - b.order || a.label.localeCompare(b.label)
       );
 
+      const hasTemperatureColumn = filtered.some((row) => {
+        const params = normalizeParametersForExport(row?.parameters);
+        return hasMeaningfulValue(resolveEnvValue(row, params, "temperature"));
+      });
+
+      const hasHumidityColumn = filtered.some((row) => {
+        const params = normalizeParametersForExport(row?.parameters);
+        return hasMeaningfulValue(resolveEnvValue(row, params, "humidity"));
+      });
+
       const headers = [
         "Device ID",
         "Device Name",
         "Time (ISO)",
-        "Temperature (deg C)",
-        "Humidity (%)",
+        ...(hasTemperatureColumn ? ["Temperature (deg C)"] : []),
+        ...(hasHumidityColumn ? ["Humidity (%)"] : []),
         "Common Alarm",
         "WiFi Strength",
         ...dynamicColumns.map((col) => col.label),
@@ -280,7 +314,12 @@ export default function ExportPage() {
         const deviceName = resolveDeviceName(r);
         const ts = toEpochMs(r?.ts);
         const params = normalizeParametersForExport(r?.parameters);
-        const paramValues = new Map(params.map((param) => [`p:${param.id}`, param.value]));
+        const paramValues = new Map<string, any>();
+        params.forEach((param) => {
+          const amp = parsePhaseAmp(`${param.id} ${param.label}`);
+          const metricId = amp?.metricId ?? `param_${param.id}`;
+          if (!paramValues.has(metricId)) paramValues.set(metricId, param.value);
+        });
 
         const temperature = resolveEnvValue(r, params, "temperature");
         const humidity = resolveEnvValue(r, params, "humidity");
@@ -288,21 +327,25 @@ export default function ExportPage() {
         const wifiStrength = resolveWifiStrength(r);
 
         const dynamicValues = dynamicColumns.map((col) => {
-          if (col.source === "parameter") return toCell(paramValues.get(col.id));
+          const fromParam = paramValues.get(col.metricId);
+          if (hasMeaningfulValue(fromParam)) return toCell(fromParam);
           if (col.fieldKey) return toCell((r as any)[col.fieldKey]);
           return "";
         });
 
-        return [
+        const rowValues = [
           deviceId,
           deviceName,
           Number.isFinite(ts) ? new Date(ts).toISOString() : "",
-          toCell(temperature),
-          toCell(humidity),
-          commonAlarm ? "Yes" : "No",
-          toCell(wifiStrength),
-          ...dynamicValues,
         ];
+
+        if (hasTemperatureColumn) rowValues.push(toCell(temperature));
+        if (hasHumidityColumn) rowValues.push(toCell(humidity));
+
+        rowValues.push(commonAlarm ? "Yes" : "No");
+        rowValues.push(toCell(wifiStrength));
+        rowValues.push(...dynamicValues);
+        return rowValues;
       });
 
       const csv = [
