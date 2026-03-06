@@ -1,8 +1,22 @@
 import { useMemo, useState } from "react";
 import { getIoTReadingsHistory } from "../api/client";
 import { useDashboard } from "../hooks/queries";
-import { flattenPayloadDeep } from "../utils/metrics";
 import { formatNumericLikeCell } from "../utils/numberFormat";
+
+type ExportParam = {
+  id: string;
+  label: string;
+  order: number;
+  value: any;
+};
+
+type DynamicColumn = {
+  id: string;
+  label: string;
+  order: number;
+  source: "parameter" | "field";
+  fieldKey?: string;
+};
 
 const toLocalStart = (dateStr: string) => {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -13,6 +27,127 @@ const toLocalEnd = (dateStr: string) => {
   const [y, m, d] = dateStr.split("-").map(Number);
   if (!y || !m || !d) return NaN;
   return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+};
+
+const toEpochMs = (value: any) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  if (n > 1e9 && n < 1e12) return Math.round(n * 1000);
+  return Math.round(n);
+};
+
+const parseBooleanLike = (value: any): boolean | undefined => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const lowered = value.trim().toLowerCase();
+    if (["1", "true", "yes", "y", "on", "alarm", "active"].includes(lowered)) return true;
+    if (["0", "false", "no", "n", "off", "ok", "normal", "inactive", "none"].includes(lowered)) return false;
+  }
+  return undefined;
+};
+
+const safeJsonParse = (value: any) => {
+  if (typeof value !== "string") return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const normalizeParametersForExport = (raw: any): ExportParam[] => {
+  const source = (() => {
+    if (Array.isArray(raw)) return raw;
+    const parsed = safeJsonParse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  })();
+
+  return source
+    .map((entry, idx) => {
+      const item = typeof entry === "string" ? safeJsonParse(entry) : entry;
+      if (!item || typeof item !== "object") return null;
+
+      const key = String(item.key ?? `param_${idx + 1}`);
+      const labelBase = String(item.label ?? item.key ?? `Parameter ${idx + 1}`);
+      const unit = item.unit != null ? String(item.unit).trim() : "";
+      const label = unit && !labelBase.toLowerCase().includes(unit.toLowerCase()) ? `${labelBase} (${unit})` : labelBase;
+      const orderRaw = Number(item.order);
+      const order = Number.isFinite(orderRaw) ? orderRaw : idx + 1;
+
+      return {
+        id: key.trim().toLowerCase(),
+        label: label.trim(),
+        order,
+        value: item.value,
+      };
+    })
+    .filter((item): item is ExportParam => Boolean(item))
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+};
+
+const isEnvParam = (param: ExportParam) => {
+  const text = `${param.id} ${param.label}`.toLowerCase();
+  return text.includes("temp") || text.includes("humid");
+};
+
+const resolveDeviceName = (row: any) => {
+  const candidates = [row?.deviceName, row?.device_name, row?.["device name"]];
+  for (const value of candidates) {
+    if (value == null) continue;
+    const out = String(value).trim();
+    if (out) return out;
+  }
+  return "";
+};
+
+const resolveCommonAlarm = (row: any) => {
+  const keys = [
+    "Common Alarm",
+    "common alarm",
+    "CommonAlarm",
+    "commonAlarm",
+    "Common_Issue",
+    "Common Issue",
+    "common_issue",
+    "common issue",
+  ];
+
+  const lower: Record<string, any> = {};
+  Object.entries(row || {}).forEach(([k, v]) => {
+    lower[String(k).toLowerCase()] = v;
+  });
+
+  for (const key of keys) {
+    const lk = key.toLowerCase();
+    if (!(lk in lower)) continue;
+    const parsed = parseBooleanLike(lower[lk]);
+    if (typeof parsed === "boolean") return parsed;
+  }
+
+  return false;
+};
+
+const resolveWifiStrength = (row: any) => {
+  const candidates = [row?.wifi_strength, row?.wifiStrength, row?.wifiSignal, row?.wifi];
+  for (const value of candidates) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+};
+
+const resolveEnvValue = (row: any, params: ExportParam[], kind: "temperature" | "humidity") => {
+  const direct = row?.[kind];
+  const directNum = Number(direct);
+  if (Number.isFinite(directNum)) return directNum;
+
+  const param = params.find((p) => {
+    const t = `${p.id} ${p.label}`.toLowerCase();
+    return kind === "temperature" ? t.includes("temp") : t.includes("humid");
+  });
+
+  return param?.value;
 };
 
 export default function ExportPage() {
@@ -38,6 +173,8 @@ export default function ExportPage() {
   }, [dashboard.data?.IoTReadings, dashboard.data?.RealTimeDataMonitor]);
 
   const toCell = (value: any) => {
+    const bool = parseBooleanLike(value);
+    if (typeof bool === "boolean") return bool ? "Yes" : "No";
     if (value == null) return "";
     if (typeof value === "object") {
       try {
@@ -59,63 +196,108 @@ export default function ExportPage() {
         from: fromTs,
         to: toTs,
       });
+
       const filtered = (historyRows ?? [])
-        .map((row) => flattenPayloadDeep(row))
         .filter((row) => {
-          const ts = Number(row.ts);
+          const ts = toEpochMs(row?.ts);
+          if (!Number.isFinite(ts)) return false;
           const did = row.deviceId != null ? String(row.deviceId) : "";
           if (Number.isFinite(fromTs) && ts < fromTs) return false;
           if (Number.isFinite(toTs) && ts > toTs) return false;
           if (form.deviceId && did !== form.deviceId) return false;
           return true;
         })
-        .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
+        .sort((a, b) => (toEpochMs(b?.ts) ?? 0) - (toEpochMs(a?.ts) ?? 0));
 
       if (!filtered.length) {
         window.alert("No data for that range/device.");
         return;
       }
 
-      const metaKeys = new Set([
-        "deviceid",
-        "devicename",
-        "device_name",
-        "ts",
-        "timestamp",
-        "time",
-        "timeiso",
-      ]);
+      const columnMap = new Map<string, DynamicColumn>();
+      const hasLabel = (label: string) =>
+        Array.from(columnMap.values()).some((col) => col.label.toLowerCase() === label.toLowerCase());
 
-      const payloadKeySet = new Map<string, string>();
       filtered.forEach((row) => {
+        const params = normalizeParametersForExport(row?.parameters);
+        params.forEach((param) => {
+          if (isEnvParam(param)) return;
+          const id = `p:${param.id}`;
+          if (columnMap.has(id)) return;
+          columnMap.set(id, {
+            id,
+            label: param.label,
+            order: param.order,
+            source: "parameter",
+          });
+        });
+
         Object.keys(row || {}).forEach((key) => {
-          if (!key) return;
-          const lower = String(key).toLowerCase();
-          if (metaKeys.has(lower)) return;
-          if (lower === "payload") return;
-          if (!payloadKeySet.has(lower)) payloadKeySet.set(lower, key);
+          if (!/^press\s*\d+\s*amps$/i.test(key)) return;
+          if (hasLabel(key)) return;
+          const match = key.match(/press\s*(\d+)/i);
+          const phase = match ? Number(match[1]) : 999;
+          const id = `f:${key.toLowerCase()}`;
+          if (columnMap.has(id)) return;
+          columnMap.set(id, {
+            id,
+            label: key,
+            order: 10_000 + phase,
+            source: "field",
+            fieldKey: key,
+          });
         });
       });
 
-      const payloadKeys = Array.from(payloadKeySet.values()).sort((a, b) => {
-        const aMatch = String(a).match(/(?:phase|press)\s*([0-9]+)/i);
-        const bMatch = String(b).match(/(?:phase|press)\s*([0-9]+)/i);
-        if (aMatch && bMatch) return Number(aMatch[1]) - Number(bMatch[1]);
-        if (aMatch) return -1;
-        if (bMatch) return 1;
-        return String(a).localeCompare(String(b));
-      });
+      const dynamicColumns = Array.from(columnMap.values()).sort(
+        (a, b) => a.order - b.order || a.label.localeCompare(b.label)
+      );
 
-      const headers = ["deviceId", "deviceName", ...payloadKeys, "ts", "timeISO"];
+      const headers = [
+        "Device ID",
+        "Device Name",
+        "Time (ISO)",
+        "Temperature (deg C)",
+        "Humidity (%)",
+        "Common Alarm",
+        "WiFi Strength",
+        ...dynamicColumns.map((col) => col.label),
+      ];
 
       const rows = filtered.map((r) => {
         const deviceId = r.deviceId != null ? String(r.deviceId) : "";
-        const deviceName = r.deviceName ?? (r as any).device_name ?? (r as any)["device name"] ?? "";
-        const ts = Number(r.ts);
-        const payloadValues = payloadKeys.map((key) => toCell((r as any)[key]));
-        return [deviceId, deviceName, ...payloadValues, Number.isFinite(ts) ? ts : "", Number.isFinite(ts) ? new Date(ts).toISOString() : ""];
+        const deviceName = resolveDeviceName(r);
+        const ts = toEpochMs(r?.ts);
+        const params = normalizeParametersForExport(r?.parameters);
+        const paramValues = new Map(params.map((param) => [`p:${param.id}`, param.value]));
+
+        const temperature = resolveEnvValue(r, params, "temperature");
+        const humidity = resolveEnvValue(r, params, "humidity");
+        const commonAlarm = resolveCommonAlarm(r);
+        const wifiStrength = resolveWifiStrength(r);
+
+        const dynamicValues = dynamicColumns.map((col) => {
+          if (col.source === "parameter") return toCell(paramValues.get(col.id));
+          if (col.fieldKey) return toCell((r as any)[col.fieldKey]);
+          return "";
+        });
+
+        return [
+          deviceId,
+          deviceName,
+          Number.isFinite(ts) ? new Date(ts).toISOString() : "",
+          toCell(temperature),
+          toCell(humidity),
+          commonAlarm ? "Yes" : "No",
+          toCell(wifiStrength),
+          ...dynamicValues,
+        ];
       });
-      const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${String(v).replace(/\"/g, '\"\"')}"`).join(","))].join("\n");
+
+      const csv = [
+        headers.join(","),
+        ...rows.map((r) => r.map((v) => `"${String(v).replace(/\"/g, '\"\"')}"`).join(",")),
+      ].join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -184,7 +366,7 @@ export default function ExportPage() {
         >
           {isLoading ? "Preparing…" : "Download CSV"}
         </button>
-        <p className="text-sm text-slate-400">Client builds CSV directly from AWS data.</p>
+        <p className="text-sm text-slate-400">CSV includes user-friendly fields and parameter values.</p>
       </div>
     </div>
   );
