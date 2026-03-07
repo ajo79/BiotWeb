@@ -127,7 +127,14 @@ const toEpochMs = (value: any) => {
 
   const numeric = Number(value);
   if (Number.isFinite(numeric)) {
-    if (numeric > 1e9 && numeric < 1e12) return Math.round(numeric * 1000);
+    // Normalize common timestamp units to epoch milliseconds.
+    // - seconds:   1e9..1e12
+    // - millis:    ~1e12
+    // - micros:    >1e13
+    // - nanos:     >1e16
+    if (numeric > 1e16) return Math.round(numeric / 1e6); // ns -> ms
+    if (numeric > 1e13) return Math.round(numeric / 1e3); // us -> ms
+    if (numeric > 1e9 && numeric < 1e12) return Math.round(numeric * 1000); // s -> ms
     return Math.round(numeric);
   }
 
@@ -1044,7 +1051,17 @@ export async function getRealtime() {
 
 export async function getAlarms() {
   const data = await fetchDashboardData();
-  return data.ESP32_Alarms ?? [];
+  return [...(data.ESP32_Alarms ?? [])].sort((a, b) => {
+    const aTs = Number(a?.ts);
+    const bTs = Number(b?.ts);
+    const aHasTs = Number.isFinite(aTs);
+    const bHasTs = Number.isFinite(bTs);
+
+    if (aHasTs && bHasTs) return bTs - aTs;
+    if (aHasTs) return -1;
+    if (bHasTs) return 1;
+    return 0;
+  });
 }
 
 export async function getIoTReadingsHistory({

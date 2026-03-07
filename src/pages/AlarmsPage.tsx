@@ -18,21 +18,30 @@ export default function AlarmsPage() {
             <tr>
               <th className="px-3 py-2 text-left">#</th>
               <th className="px-3 py-2 text-left">Device</th>
+              <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Message</th>
               <th className="px-3 py-2 text-left">Time</th>
-              
             </tr>
           </thead>
           <tbody>
             {(data ?? []).map((row, idx) => {
-              const ts = row.ts ?? row.timestamp;
-              const message = row?.payload?.message || row?.message || "Alarm";
+              const ts = Number(row?.ts);
+              const alarmFlag = Number(row?.alarmFlag);
+              const statusLabel = alarmFlag === 0 ? "Cleared" : alarmFlag === 1 ? "Active" : "--";
+              const statusTone =
+                alarmFlag === 0
+                  ? "text-emerald-300"
+                  : alarmFlag === 1
+                    ? "text-amber-300"
+                    : "text-slate-400";
+              const message = row?.message || "Alarm";
               return (
                 <tr key={idx} className="border-t border-white/5 hover:bg-white/5">
                   <td className="px-3 py-2 text-slate-300">{idx + 1}</td>
                   <td className="px-3 py-2 font-semibold">{row.deviceId}</td>
+                  <td className={`px-3 py-2 font-medium ${statusTone}`}>{statusLabel}</td>
                   <td className="px-3 py-2 text-slate-200">{message}</td>
-                  <td className="px-3 py-2 text-slate-400">{ts ? new Date(ts).toLocaleString() : "--"}</td>
+                  <td className="px-3 py-2 text-slate-400">{Number.isFinite(ts) ? new Date(ts).toLocaleString() : "--"}</td>
                 </tr>
               );
             })}
