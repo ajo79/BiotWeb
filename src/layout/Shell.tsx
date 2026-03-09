@@ -1,7 +1,10 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../auth/auth";
+import { getDeviceHistory } from "../api/client";
+import { useRealtime } from "../hooks/queries";
 
 type IconProps = { className?: string };
 
@@ -117,10 +120,36 @@ const nav = [
   { to: "/export", label: "Export", icon: ExportIcon },
 ];
 
+const MAX_HISTORY_PREFETCH_DEVICES = 16;
+
+const toLocalDayStart = (epochMs: number) => {
+  const d = new Date(epochMs);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+
+const toLocalDayEnd = (epochMs: number) => {
+  const d = new Date(epochMs);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+};
+
+const toLocalDayKey = (epochMs: number) => {
+  const d = new Date(epochMs);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const { logout, state } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const realtime = useRealtime({ enabled: true, refetchInterval: 5000 });
+  const prefetchedHistoryKeysRef = useRef(new Set<string>());
+  const prefetchedDayKeyRef = useRef<string>("");
   const secondaryNav = useMemo(
     () => [
       { to: "/notifications", label: "Notifications", icon: NotificationsIcon },
@@ -133,6 +162,47 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const active = useMemo(() => allNav.find((n) => pathname === n.to || pathname.startsWith(n.to + "/")), [pathname, allNav]);
   const apiUrl = (import.meta.env.VITE_API_URL as string) ?? "https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod";
   const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const now = Date.now();
+    const dayKey = toLocalDayKey(now);
+    if (prefetchedDayKeyRef.current !== dayKey) {
+      prefetchedDayKeyRef.current = dayKey;
+      prefetchedHistoryKeysRef.current.clear();
+    }
+
+    const source = [...(realtime.data?.items ?? []), ...(realtime.data?.realtimeItems ?? [])];
+    if (!source.length) return;
+
+    const ids = new Set<string>();
+    source.forEach((item) => {
+      const id = String(item?.deviceId ?? "").trim();
+      if (id) ids.add(id);
+    });
+    const deviceIds = Array.from(ids).slice(0, MAX_HISTORY_PREFETCH_DEVICES);
+    if (!deviceIds.length) return;
+
+    const fromTs = toLocalDayStart(now);
+    const toTs = toLocalDayEnd(now);
+    const pending: Promise<unknown>[] = [];
+
+    deviceIds.forEach((id) => {
+      const cacheKey = `${id}:${fromTs}:${toTs}`;
+      if (prefetchedHistoryKeysRef.current.has(cacheKey)) return;
+      prefetchedHistoryKeysRef.current.add(cacheKey);
+      pending.push(
+        queryClient.prefetchQuery({
+          queryKey: ["history", id, fromTs, toTs],
+          queryFn: () => getDeviceHistory(id, fromTs, toTs),
+          staleTime: 60_000,
+        })
+      );
+    });
+
+    if (!pending.length) return;
+    void Promise.allSettled(pending);
+  }, [queryClient, realtime.data?.items, realtime.data?.realtimeItems]);
+
   const handleSignOut = () => {
     logout();
     navigate("/login", { replace: true });
@@ -141,8 +211,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen text-slate-900">
       <div className="absolute inset-0 bg-white"></div>
-      <div className="relative max-w-7xl mx-auto px-8 pb-8 min-h-screen flex flex-col">
-        <div className="grid lg:grid-cols-[15rem,1fr] gap-10 flex-1">
+      <div className="relative max-w-[92rem] mx-auto px-6 lg:px-8 pb-8 min-h-screen flex flex-col">
+        <div className="grid lg:grid-cols-[14rem,1fr] gap-8 lg:gap-9 flex-1">
           <aside className="w-full lg:w-60 flex-shrink-0 pt-10 sticky top-0 h-screen hidden lg:block">
           <div className="text-xl font-semibold tracking-tight mb-2 flex items-center gap-2">
             <div className="w-9 h-9 rounded-2xl bg-blue-600 shadow-glow grid place-content-center text-white font-bold">B</div>
