@@ -40,7 +40,8 @@ Out of scope:
 
 FR-001 Authentication
 - System shall provide login page with user ID/email and password.
-- System shall allow factory admin login (`Company_A / 1234`) for bootstrap.
+- System shall allow factory admin login (`CEAT / 1234`) for bootstrap.
+- System shall continue to accept legacy factory ID `Company_A` and normalize it to `CEAT`.
 - System shall persist auth session in localStorage and rehydrate on reload.
 - System shall block protected routes when no token is available.
 
@@ -51,7 +52,7 @@ FR-002 Role Access
 
 FR-003 Dashboard
 - System shall show total devices, online, good, and issue counts.
-- System shall show realtime feed cards with per-device metrics.
+- System shall show realtime feed cards with per-device metrics for all available live items.
 - System shall show fleet health pie breakdown.
 
 FR-004 Device List
@@ -80,8 +81,10 @@ FR-007 Alarms
 FR-008 Export
 - System shall export selected historical readings to CSV.
 - System shall support optional device filter and date range.
+- System shall apply fixed IST day boundaries (`UTC+05:30`) for date-only export filters.
 - System shall flatten payload structures and include key telemetry fields.
 - System shall format numeric-like values to two decimals.
+- System shall render export time column in IST text format.
 
 FR-009 Analytics
 - System shall show uptime by device.
@@ -89,7 +92,8 @@ FR-009 Analytics
 - System shall list anomaly queue and signal quality indicators.
 
 FR-010 Notifications/Help/About
-- System shall provide informational pages for notifications/help/about.
+- System shall provide informational pages for help/about in left navigation.
+- System shall keep notifications page available by route (`/notifications`) even when hidden from left menu.
 - Help page shall include contact form and organization details.
 
 ## 6. Data and Telemetry Requirements
@@ -110,7 +114,7 @@ DR-003 System shall support both environmental metrics and press metrics:
 
 DR-004 System shall support history filters by:
 - `deviceId`
-- `from`/`to` local date boundaries converted to epoch milliseconds.
+- `from`/`to` fixed site date boundaries (`UTC+05:30`, 00:00:00.000 to 23:59:59.999) converted to epoch milliseconds.
 
 ## 7. Online Status Requirements
 
@@ -154,6 +158,7 @@ NFR-005 Compatibility
 - Backend endpoint remains reachable and returns expected logical sections.
 - Telemetry timestamp fields are present for most records.
 - ESP32 publishes approximately every 5 seconds.
+- Deployment target uses India site timezone boundary (`UTC+05:30`) for date-only filtering and exports.
 
 ## 10. Acceptance Criteria
 
@@ -161,6 +166,5 @@ NFR-005 Compatibility
 - Protected routes redirect to login when unauthenticated.
 - Realtime pages update approximately every 5 seconds.
 - History queries return same-day and multi-day data ranges reliably.
-- CSV export contains data for selected device/date filters.
+- CSV export contains data for selected device/date filters using IST day boundaries.
 - Device status does not flap offline on minor single-cycle delays.
-

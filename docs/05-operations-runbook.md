@@ -7,6 +7,7 @@
 - Confirm graph history for same-day and multi-day ranges.
 - Confirm alarm table receives records when alarms are active.
 - Confirm CSV export downloads valid rows for known range.
+- Confirm export/date filters align to fixed IST day boundaries (UTC+05:30).
 
 ## 2. Health Signals
 
@@ -30,8 +31,8 @@ Issue: app fails with tsconfig extends error
 - Action: use current self-contained `tsconfig.json`.
 
 Issue: history same-day range shows no data
-- Current mitigation: client fallback fetch without server date filter, then local filter.
-- Verify device has readings in selected local date window.
+- Current mitigation: client fallback fetch without server date filter, then client-side IST filter.
+- Verify device has readings in selected IST date window (00:00 to 23:59 IST).
 
 Issue: devices flap offline
 - Current mitigation: robust online state machine with missed-poll and hysteresis logic.
@@ -41,6 +42,10 @@ Issue: no realtime data
 - Check network and endpoint availability.
 - Confirm `VITE_API_URL` points to valid `/prod` endpoint.
 - Validate API response still includes expected telemetry sections.
+
+Issue: expected page missing in left menu
+- Notifications route is available at `/notifications` but is hidden from sidebar by design.
+- Help/About remain visible in sidebar support section.
 
 ## 4. Security and Compliance Notes
 
@@ -75,11 +80,10 @@ Before release:
 
 After release:
 - monitor telemetry loading and online-state stability.
-- verify exported CSV correctness with sample records.
+- verify exported CSV correctness with sample records and IST time column values.
 
 ## 7. Known Limitations
 
 - No backend pagination contract guarantees; client handles many token aliases.
 - Demo pages (notifications/help/profile) are local storage centric.
 - Large production bundles trigger chunk size warnings (not blocking).
-

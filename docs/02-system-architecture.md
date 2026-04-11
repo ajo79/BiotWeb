@@ -52,6 +52,10 @@ Primary pages:
 - `/help`
 - `/about`
 
+Navigation behavior:
+- Left sidebar currently exposes Dashboard/Devices/Graph/Alarms/Export plus Help/About.
+- Notifications route exists but is intentionally hidden from the left sidebar.
+
 ## 4. Data Flow
 
 1. Page calls hook (`useRealtime`, `useDashboard`, etc.).
@@ -88,7 +92,7 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 - API endpoint handling.
 - Multi-format payload normalization.
 - Realtime merge logic.
-- History pagination and filtering.
+- History pagination and filtering (`limit` support, multi-page cursor loop).
 - Online-state machine.
 
 `src/hooks/queries.ts`
@@ -102,7 +106,10 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 - RSSI normalization and wifi strength labels.
 
 `src/pages/ExportPage.tsx`
-- Converts history rows to CSV client-side.
+- Converts history rows to CSV client-side with fixed IST date boundaries and `Time (IST)` formatting.
+
+`src/utils/siteTime.ts`
+- Centralized fixed site timezone utilities (`UTC+05:30`) for date input boundaries and display formatting.
 
 `src/pages/MorePage.tsx`
 - Local user CRUD and role assignment.
@@ -123,4 +130,3 @@ No backend persistence is used for user management in current implementation.
 - Credentials and local users are browser-stored.
 - Suitable for controlled/demo environments.
 - For production hardening, move auth and user management to backend identity services.
-

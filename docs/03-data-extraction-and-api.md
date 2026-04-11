@@ -21,6 +21,7 @@ Fast realtime status read:
 
 IoT readings pagination/history:
 - `iotReadingsOnly=1`
+- `limit` (client currently requests up to `1000` rows per page)
 - optional `deviceId`
 - optional time range aliases:
   - `startTsEpochMs`, `startTs`, `fromTs`
@@ -105,12 +106,13 @@ History source:
 
 Filter strategy:
 - Device ID filter.
-- From/to epoch range filter using local date boundaries (`00:00:00.000` to `23:59:59.999`).
+- From/to epoch range filter using fixed IST day boundaries (`UTC+05:30`, `00:00:00.000` to `23:59:59.999`).
 - Sort ascending by timestamp.
 
 Robust fallback:
-- If server-side ranged query returns no rows, client retries device-scoped fetch without server date filter and applies local filtering.
+- If server-side ranged query returns no rows, client retries device-scoped fetch without server date filter and applies client-side site-time filtering.
 - This mitigates same-day range misses from backend filtering behavior.
+- Export page requests paginated history with `pageLimit=1000` and `maxPages=500`.
 
 ## 9. Export Data Pipeline
 
@@ -118,7 +120,7 @@ Robust fallback:
 
 1. Flattens each row payload.
 2. Builds dynamic CSV headers from discovered payload keys.
-3. Includes `deviceId`, `deviceName`, `ts`, `timeISO`.
+3. Includes `deviceId`, `deviceName`, and formatted `Time (IST)`.
 4. Formats numeric-like values to two decimals.
 5. Triggers browser CSV download.
 
@@ -127,4 +129,3 @@ Robust fallback:
 - Invalid JSON response throws clear parse error.
 - Realtime fast status call auto-falls back to full fetch.
 - Query hooks retry once by default (QueryClient setting).
-

@@ -15,6 +15,7 @@ Use this checklist before release.
 - Valid credentials navigate to `/`.
 - Reload preserves session.
 - Sign out clears session and returns to login.
+- Factory credential works with `CEAT / 1234` (legacy `Company_A` still accepted).
 
 ## 3. Dashboard
 
@@ -58,6 +59,7 @@ Use this checklist before release.
 - Export with date range downloads CSV.
 - CSV includes expected headers and rows.
 - Numeric-like values are formatted with two decimals.
+- Time column is exported as `Time (IST)` and matches selected IST date boundaries.
 
 ## 9. Analytics
 
@@ -77,10 +79,10 @@ Use this checklist before release.
 
 - Desktop sidebar navigation works.
 - Mobile drawer opens/closes and route links work.
+- Sidebar support menu shows `Help Center` and `About` only (Notifications hidden by design).
 
 ## 12. Regression Focus
 
 - Realtime status should not flap offline under normal 5s publish cadence.
 - History mode must not auto-refresh continuously.
 - Same-day history range must return data when present.
-

@@ -80,5 +80,5 @@ Optional:
 - Realtime and history pages load telemetry.
 - Same-day history range returns expected data.
 - CSV export works.
+- Date-only history/export filtering honors fixed IST boundaries (`UTC+05:30`).
 - Login and protected routes function.
-
