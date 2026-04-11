@@ -291,7 +291,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   >
                     <span className="text-xl leading-none">☰</span>
                   </button>
-                <p className="text-sm text-slate-400">Realtime IoT telemetry</p>
                 <h1 className="text-3xl font-semibold">{active?.label ?? "Dashboard"}</h1>
                 </div>
               </div>

@@ -138,20 +138,26 @@ export default function GraphPage() {
   const liveItems = realtime.data?.realtimeItems ?? [];
   const liveTick = realtime.dataUpdatedAt;
   const allDeviceOptions = useMemo(() => {
-    const ids = new Set<string>();
+    const byId = new Map<string, { id: string; name: string; label: string }>();
     const source = [...(realtime.data?.items ?? []), ...(realtime.data?.realtimeItems ?? [])];
     source.forEach((item) => {
       const id = item?.deviceId != null ? String(item.deviceId).trim() : "";
-      if (id) ids.add(id);
+      if (!id) return;
+      const name = item?.deviceName != null ? String(item.deviceName).trim() : "";
+      const label = name ? `${id} - ${name}` : id;
+      const prev = byId.get(id);
+      if (!prev || (!prev.name && name)) {
+        byId.set(id, { id, name, label });
+      }
     });
-    return Array.from(ids).sort((a, b) => a.localeCompare(b));
+    return Array.from(byId.values()).sort((a, b) => a.id.localeCompare(b.id));
   }, [realtime.data?.items, realtime.data?.realtimeItems]);
-  const selectedId = selectedDevice || allDeviceOptions[0] || "";
+  const selectedId = selectedDevice || allDeviceOptions[0]?.id || "";
 
   useEffect(() => {
     if (!allDeviceOptions.length) return;
-    if (!selectedDevice || !allDeviceOptions.includes(selectedDevice)) {
-      setSelectedDevice(allDeviceOptions[0]);
+    if (!selectedDevice || !allDeviceOptions.some((opt) => opt.id === selectedDevice)) {
+      setSelectedDevice(allDeviceOptions[0].id);
     }
   }, [selectedDevice, allDeviceOptions]);
 
@@ -423,9 +429,9 @@ export default function GraphPage() {
             onChange={(e) => setSelectedDevice(e.target.value)}
             className="mt-1 glass rounded-lg px-3 py-2 border border-white/5 bg-panel"
           >
-            {allDeviceOptions.map((id) => (
-              <option key={id} value={id}>
-                {id}
+            {allDeviceOptions.map((device) => (
+              <option key={device.id} value={device.id}>
+                {device.label}
               </option>
             ))}
           </select>
