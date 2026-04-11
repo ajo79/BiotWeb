@@ -29,35 +29,19 @@ import {
   resolveScopeWindowMs,
   timePerDivisionMs,
 } from "../utils/chartTimebase";
+import {
+  dateInputToSiteDayEndMs,
+  dateInputToSiteDayStartMs,
+  epochMsToSiteDayEndMs,
+  epochMsToSiteDayStartMs,
+  getSiteDateInputValue,
+  shiftDateInputByDays,
+} from "../utils/siteTime";
 
 const HEARTBEAT_THRESHOLD_MS = 10_000;
 const POLLING_GRANULARITY_MS = 5_000;
 const OFFLINE_AFTER_MS = HEARTBEAT_THRESHOLD_MS + POLLING_GRANULARITY_MS;
 const LIVE_MAX_POINTS = Math.ceil(LIVE_SCOPE_BUFFER_MS / 5_000) + 240;
-
-const toLocalStart = (dateStr: string) => {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  if (!y || !m || !d) return NaN;
-  return new Date(y, m - 1, d).getTime();
-};
-
-const toLocalEnd = (dateStr: string) => {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  if (!y || !m || !d) return NaN;
-  return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
-};
-
-const toLocalDayStart = (epochMs: number) => {
-  const d = new Date(epochMs);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-};
-
-const toLocalDayEnd = (epochMs: number) => {
-  const d = new Date(epochMs);
-  d.setHours(23, 59, 59, 999);
-  return d.getTime();
-};
 
 const normalizeDateRange = (range: { start: string; end: string }) => {
   if (range.start && range.end && range.start > range.end) {
@@ -138,10 +122,9 @@ export default function GraphPage() {
   const [refreshAnimating, setRefreshAnimating] = useState(false);
   const scopePresetId = DEFAULT_SCOPE_PRESET_ID;
   const [initialHistoryRange] = useState(() => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(end.getDate() - 1);
-    return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+    const end = getSiteDateInputValue();
+    const start = shiftDateInputByDays(end, -1);
+    return { start, end };
   });
   const [draftRange, setDraftRange] = useState(initialHistoryRange);
   const [appliedRange, setAppliedRange] = useState(initialHistoryRange);
@@ -215,13 +198,13 @@ export default function GraphPage() {
 
   const history = useDeviceHistory(
     mode === "history" ? selectedId : "",
-    toLocalStart(appliedRange.start),
-    toLocalEnd(appliedRange.end)
+    dateInputToSiteDayStartMs(appliedRange.start),
+    dateInputToSiteDayEndMs(appliedRange.end)
   );
 
   const liveHistoryBounds = useMemo(() => {
     const anchorTs = Number.isFinite(liveHistoryAnchorTs) ? Number(liveHistoryAnchorTs) : Date.now();
-    return { from: toLocalDayStart(anchorTs), to: toLocalDayEnd(anchorTs) };
+    return { from: epochMsToSiteDayStartMs(anchorTs), to: epochMsToSiteDayEndMs(anchorTs) };
   }, [liveHistoryAnchorTs]);
 
   const liveHistory = useDeviceHistory(
@@ -256,11 +239,11 @@ export default function GraphPage() {
     if (mode === "live") {
       const latestTs = Number(modeData.at(-1)?.plotTs);
       const endTs = Number.isFinite(latestTs) ? Math.max(Number(latestTs), Date.now()) : Date.now();
-      return { startTs: toLocalDayStart(endTs), endTs };
+      return { startTs: epochMsToSiteDayStartMs(endTs), endTs };
     }
 
-    const selectedStartTs = toLocalStart(appliedRange.start);
-    const selectedEndTs = toLocalEnd(appliedRange.end);
+    const selectedStartTs = dateInputToSiteDayStartMs(appliedRange.start);
+    const selectedEndTs = dateInputToSiteDayEndMs(appliedRange.end);
     if (Number.isFinite(selectedStartTs) && Number.isFinite(selectedEndTs) && selectedEndTs > selectedStartTs) {
       return { startTs: selectedStartTs, endTs: selectedEndTs };
     }
@@ -273,15 +256,15 @@ export default function GraphPage() {
 
     const fallbackEndTs = Number.isFinite(lastPointTs)
       ? lastPointTs
-      : Number.isFinite(toLocalEnd(appliedRange.end))
-      ? toLocalEnd(appliedRange.end)
+      : Number.isFinite(dateInputToSiteDayEndMs(appliedRange.end))
+      ? dateInputToSiteDayEndMs(appliedRange.end)
       : Date.now();
     return { startTs: fallbackEndTs - scopeWindowMs, endTs: fallbackEndTs };
   }, [mode, modeData, scopeWindowMs, appliedRange.start, appliedRange.end, liveTick]);
 
   const historyBoundsDomain = useMemo(() => {
-    const startTs = toLocalStart(appliedRange.start);
-    const endTs = toLocalEnd(appliedRange.end);
+    const startTs = dateInputToSiteDayStartMs(appliedRange.start);
+    const endTs = dateInputToSiteDayEndMs(appliedRange.end);
     if (Number.isFinite(startTs) && Number.isFinite(endTs) && endTs > startTs) {
       return { startTs, endTs };
     }

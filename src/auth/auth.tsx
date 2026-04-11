@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
-const FACTORY_USER = "Company_A";
+const FACTORY_USER = "CEAT";
+const LEGACY_FACTORY_USER = "Company_A";
 const FACTORY_PASSWORD = "1234";
 const STORAGE_KEY = "biot_auth";
 const USERS_KEY = "biot_users_v1";
@@ -46,7 +47,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed?.userId && parsed?.token) setState({ role: null, ...parsed });
+        if (parsed?.userId && parsed?.token) {
+          const normalizedUserId = parsed.userId === LEGACY_FACTORY_USER ? FACTORY_USER : parsed.userId;
+          const next = { role: null, ...parsed, userId: normalizedUserId };
+          setState(next);
+          if (normalizedUserId !== parsed.userId) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+          }
+        }
       }
     } catch {
       /* ignore */
@@ -57,8 +65,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (userId: string, password: string) => {
     if (!userId || !password) throw new Error("User ID and password are required.");
     const input = String(userId).trim();
-    if ((input === FACTORY_USER && password === FACTORY_PASSWORD)) {
-      const next = { userId: input, token: "factory-token", role: "admin" as const };
+    const isFactoryUser = input === FACTORY_USER || input === LEGACY_FACTORY_USER;
+    if (isFactoryUser && password === FACTORY_PASSWORD) {
+      const next = { userId: FACTORY_USER, token: "factory-token", role: "admin" as const };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       setState(next);
       return;

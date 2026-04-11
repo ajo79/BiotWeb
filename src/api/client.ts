@@ -853,11 +853,13 @@ async function fetchAllIoTReadings({
   startTsEpochMs,
   endTsEpochMs,
   maxPages = 80,
+  pageLimit = 1000,
 }: {
   deviceId?: string;
   startTsEpochMs?: number;
   endTsEpochMs?: number;
   maxPages?: number;
+  pageLimit?: number;
 } = {}) {
   const allRows: Reading[] = [];
   const seenRows = new Set<string>();
@@ -866,10 +868,12 @@ async function fetchAllIoTReadings({
   let stopReason = "no_more";
   let cursor: any = undefined;
   let firstPageRawCount = 0;
+  const normalizedPageLimit = Math.min(Math.max(Math.round(Number(pageLimit) || 1000), 1), 1000);
 
   while (pagesFetched < maxPages) {
     const query: Record<string, any> = {};
     query.iotReadingsOnly = "1";
+    query.limit = normalizedPageLimit;
 
     if (deviceId != null && String(deviceId).trim()) {
       query.deviceId = String(deviceId).trim();
@@ -1069,11 +1073,13 @@ export async function getIoTReadingsHistory({
   from,
   to,
   maxPages,
+  pageLimit,
 }: {
   deviceId?: string;
   from?: number;
   to?: number;
   maxPages?: number;
+  pageLimit?: number;
 } = {}) {
   const requestedDeviceId = String(deviceId || "").trim();
   const target = requestedDeviceId.toLowerCase();
@@ -1114,6 +1120,7 @@ export async function getIoTReadingsHistory({
     startTsEpochMs: from,
     endTsEpochMs: to,
     maxPages,
+    pageLimit,
   });
   let filteredRows = normalizeAndFilterRows(scoped.IoTReadings ?? []);
   if (filteredRows.length > 0) return filteredRows;
@@ -1124,6 +1131,7 @@ export async function getIoTReadingsHistory({
     const fallback = await fetchAllIoTReadings({
       deviceId: requestedDeviceId || undefined,
       maxPages,
+      pageLimit,
     });
     filteredRows = normalizeAndFilterRows(fallback.IoTReadings ?? []);
   }

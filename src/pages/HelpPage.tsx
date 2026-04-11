@@ -28,7 +28,7 @@ export default function HelpPage() {
             1102, 11th floor, Makhija Royale, Plot number 753, SV Rd, Khar West, Mumbai, Maharashtra 400052
           </p>
           <p><span className="font-semibold text-slate-700">Mobile:</span> +91 9920977098</p>
-          <p><span className="font-semibold text-slate-700">Mail:</span> babu@blackstarproducts.com</p>
+          <p><span className="font-semibold text-slate-700">Mail:</span> info@blackstarproducts.com</p>
           <p><span className="font-semibold text-slate-700">Web:</span> www.blackstarproducts.com</p>
         </div>
 
@@ -87,11 +87,12 @@ export default function HelpPage() {
       <div className="glass rounded-2xl p-5 border border-white/5 shadow-ambient space-y-3">
         <h2 className="text-xl font-semibold">Helpful tips</h2>
         <ul className="list-disc list-inside text-slate-200 space-y-2">
-          <li>Data refresh every 1s (Realtime Monitor). If empty, device may be offline.</li>
+          <li>Data refresh every 5s (Realtime Monitor). If empty, device may be offline.</li>
           <li>History queries use IoTReadings dataset; pick date range in Graph/Export.</li>
-          <li>Factory login: Company_A / 1234 (demo).</li>
+          <li>Factory login: CEAT / 1234 (demo).</li>
         </ul>
       </div>
     </div>
   );
 }
+

@@ -2,6 +2,16 @@ import { useMemo, useState } from "react";
 import { getIoTReadingsHistory } from "../api/client";
 import { useDashboard } from "../hooks/queries";
 import { formatNumericLikeCell } from "../utils/numberFormat";
+import {
+  dateInputToSiteDayEndMs,
+  dateInputToSiteDayStartMs,
+  formatEpochMsInSiteTime,
+  getSiteDateInputValue,
+  shiftDateInputByDays,
+} from "../utils/siteTime";
+
+const EXPORT_PAGE_LIMIT = 1000;
+const EXPORT_MAX_PAGES = 500;
 
 type ExportParam = {
   id: string;
@@ -16,17 +26,6 @@ type DynamicColumn = {
   label: string;
   order: number;
   fieldKey?: string;
-};
-
-const toLocalStart = (dateStr: string) => {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  if (!y || !m || !d) return NaN;
-  return new Date(y, m - 1, d).getTime();
-};
-const toLocalEnd = (dateStr: string) => {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  if (!y || !m || !d) return NaN;
-  return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
 };
 
 const toEpochMs = (value: any) => {
@@ -181,10 +180,9 @@ const resolveEnvValue = (row: any, params: ExportParam[], kind: "temperature" | 
 export default function ExportPage() {
   const dashboard = useDashboard();
   const [form, setForm] = useState(() => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(end.getDate() - 7);
-    return { deviceId: "", start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+    const end = getSiteDateInputValue();
+    const start = shiftDateInputByDays(end, -7);
+    return { deviceId: "", start, end };
   });
   const [isLoading, setIsLoading] = useState(false);
   const deviceOptions = useMemo(() => {
@@ -218,12 +216,14 @@ export default function ExportPage() {
   const handleExport = async () => {
     setIsLoading(true);
     try {
-      const fromTs = toLocalStart(form.start);
-      const toTs = toLocalEnd(form.end);
+      const fromTs = dateInputToSiteDayStartMs(form.start);
+      const toTs = dateInputToSiteDayEndMs(form.end);
       const historyRows = await getIoTReadingsHistory({
         deviceId: form.deviceId || undefined,
         from: fromTs,
         to: toTs,
+        maxPages: EXPORT_MAX_PAGES,
+        pageLimit: EXPORT_PAGE_LIMIT,
       });
 
       const filtered = (historyRows ?? [])
@@ -301,7 +301,7 @@ export default function ExportPage() {
       const headers = [
         "Device ID",
         "Device Name",
-        "Time (ISO)",
+        "Time (IST)",
         ...(hasTemperatureColumn ? ["Temperature (deg C)"] : []),
         ...(hasHumidityColumn ? ["Humidity (%)"] : []),
         "Common Alarm",
@@ -336,7 +336,7 @@ export default function ExportPage() {
         const rowValues = [
           deviceId,
           deviceName,
-          Number.isFinite(ts) ? new Date(ts).toISOString() : "",
+          Number.isFinite(ts) ? formatEpochMsInSiteTime(ts as number) : "",
         ];
 
         if (hasTemperatureColumn) rowValues.push(toCell(temperature));

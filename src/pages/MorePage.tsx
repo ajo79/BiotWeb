@@ -40,7 +40,7 @@ const isValidEmail = (email: string) => /\S+@\S+\.\S+/.test(email);
 
 export default function MorePage() {
   const { state } = useAuth();
-  const isAdmin = state.role === "admin" || state.userId === "Company_A";
+  const isAdmin = state.role === "admin" || state.userId === "CEAT" || state.userId === "Company_A";
   const [users, setUsers] = useState<User[]>(() => loadUsers());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", email: "", role: "user" as Role, password: "", confirm: "" });
@@ -287,3 +287,4 @@ export default function MorePage() {
     </div>
   );
 }
+

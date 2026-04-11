@@ -75,14 +75,14 @@ export default function DashboardPage() {
   const realtime = useRealtime();
   const navigate = useNavigate();
   const motionPreset = useMotionPreset();
-  const realtimeItems = useMemo(() => {
-    const items = realtime.data?.realtimeItems ?? [];
+  const feedItems = useMemo(() => {
+    const items = realtime.data?.items ?? [];
     return [...items].sort((a, b) => String(a.deviceId ?? "").localeCompare(String(b.deviceId ?? "")));
-  }, [realtime.data?.realtimeItems]);
+  }, [realtime.data?.items]);
   const realtimeSummary = useMemo(() => {
-    if (!realtimeItems.length) return null;
-    return buildSummary(realtimeItems);
-  }, [realtimeItems]);
+    if (!feedItems.length) return null;
+    return buildSummary(feedItems);
+  }, [feedItems]);
   const summary = realtimeSummary ?? data?.summary ?? { total: 0, online: 0, good: 0, issue: 0 };
   const pct = (value: number) => (summary.total ? Math.round((value / summary.total) * 100) : 0);
   const pieData = [
@@ -116,7 +116,7 @@ export default function DashboardPage() {
             <span className="text-xs text-blue-600">auto 5s</span>
           </div>
           <div className="space-y-3 max-h-[360px] overflow-auto pr-1">
-            {realtimeItems.slice(0, 12).map((item) => {
+            {feedItems.map((item) => {
               const state = classify(item);
               const presses = extractPressMetrics(item);
               const env = getEnvValues(item);

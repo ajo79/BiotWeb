@@ -152,7 +152,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const prefetchedDayKeyRef = useRef<string>("");
   const secondaryNav = useMemo(
     () => [
-      { to: "/notifications", label: "Notifications", icon: NotificationsIcon },
       { to: "/help", label: "Help Center", icon: HelpIcon },
       { to: "/about", label: "About", icon: InfoIcon },
     ],
@@ -214,9 +213,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <div className="relative max-w-[92rem] mx-auto px-6 lg:px-8 pb-8 min-h-screen flex flex-col">
         <div className="grid lg:grid-cols-[14rem,1fr] gap-8 lg:gap-9 flex-1">
           <aside className="w-full lg:w-60 flex-shrink-0 pt-10 sticky top-0 h-screen hidden lg:block">
-          <div className="text-xl font-semibold tracking-tight mb-2 flex items-center gap-2">
-            <div className="w-9 h-9 rounded-2xl bg-blue-600 shadow-glow grid place-content-center text-white font-bold">B</div>
-            BIOT Web
+          <div className="text-xl font-semibold tracking-tight mb-2 flex items-center">
+            <img
+              src="/BIOT_logo.png"
+              alt="BIOT logo"
+              className="h-16 w-60 rounded-xl object-contain shadow-glow border border-slate-200 bg-white p-1"
+            />
           </div>
           {state.userId && <div className="mb-4 text-xs text-slate-500">User ID: <span className="font-semibold text-slate-700">{state.userId}</span></div>}
           <div className="space-y-2">
@@ -315,9 +317,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         >
           <div className="p-4 border-b border-slate-200">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 font-semibold">
-              <div className="w-8 h-8 rounded-xl bg-blue-600 shadow-glow grid place-content-center text-white font-bold">B</div>
-              BIOT Web
+              <div className="flex items-center font-semibold">
+              <img
+                src="/BIOT_logo.png"
+                alt="BIOT logo"
+                className="h-14 w-28 rounded-lg object-contain shadow-glow border border-slate-200 bg-white p-1"
+              />
               </div>
               <button className="text-xl" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button>
             </div>
