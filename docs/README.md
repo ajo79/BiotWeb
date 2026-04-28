@@ -1,6 +1,8 @@
 # BIOT Web Documentation
 
-Last updated: 2026-04-11
+Last updated: 2026-04-28
+
+Branch covered: `BiotWeb_NewUI`
 
 This folder contains complete software documentation for the BIOT Web application in this repository.
 
@@ -42,4 +44,4 @@ This folder contains complete software documentation for the BIOT Web applicatio
 
 - Stack: React 18, TypeScript, Vite 5, React Router, TanStack Query, Recharts, Framer Motion, Tailwind CSS.
 - Data source: single AWS API Gateway endpoint (`/prod`) returning Lambda-style JSON payloads.
-- Primary domain: realtime and historical BIOT telemetry (temperature/humidity and press phase current metrics).
+- Primary domain: realtime and historical BIOT telemetry with decoded parameter display, numeric metric charting, shift production summaries, and offline/alarm health states.

@@ -1,5 +1,7 @@
 # Data Extraction and API Documentation
 
+Branch covered: `BiotWeb_NewUI`.
+
 ## 1. Endpoint
 
 Default endpoint:
@@ -56,6 +58,15 @@ Environmental aliases:
 
 Press metrics:
 - Derived from key names matching `phase` or `press` with numeric ID and amperage semantics.
+
+Generic numeric metrics:
+- Derived from decoded `parameters` entries and flattened numeric payload fields.
+- Used by Graph and Device Detail metric selectors.
+- Metric IDs are stable normalized keys; labels are human-readable display labels.
+
+Shift production metrics:
+- Resolved from decoded parameter labels/keys or aliases such as `shift_1_count`, `shift1_production`, and `shift_1_production_count`.
+- Displayed as a Shift 1/2/3 donut on `type_002` device cards.
 
 ## 5. Schema Validation
 
@@ -124,7 +135,23 @@ Robust fallback:
 4. Formats numeric-like values to two decimals.
 5. Triggers browser CSV download.
 
-## 10. API Error Handling
+## 10. UI Metric Display Pipeline
+
+Dashboard and Devices use `TelemetryParameterList`:
+
+1. Decode available telemetry parameters through `getDecodedParameters`.
+2. Hide shift count values from the general parameter list.
+3. Format labels and values consistently.
+4. Show a compact first set with `Show more` expansion.
+
+Graph and Device Detail use numeric metric helpers:
+
+1. Build metric options from current live/history rows.
+2. Preserve selected metrics when still available.
+3. Render selected metrics as line series.
+4. Compute min/max/avg from visible chart points.
+
+## 11. API Error Handling
 
 - Invalid JSON response throws clear parse error.
 - Realtime fast status call auto-falls back to full fetch.

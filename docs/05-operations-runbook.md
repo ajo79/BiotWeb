@@ -1,9 +1,12 @@
 # Operations Runbook
 
+Branch covered: `BiotWeb_NewUI`.
+
 ## 1. Daily Operational Checks
 
 - Verify dashboard loads and device counts appear.
 - Confirm realtime pages update every ~5 seconds.
+- Confirm visible realtime labels show `auto 5s` / `auto-refresh 5s`.
 - Confirm graph history for same-day and multi-day ranges.
 - Confirm alarm table receives records when alarms are active.
 - Confirm CSV export downloads valid rows for known range.
@@ -44,8 +47,15 @@ Issue: no realtime data
 - Validate API response still includes expected telemetry sections.
 
 Issue: expected page missing in left menu
-- Notifications route is available at `/notifications` but is hidden from sidebar by design.
-- Help/About remain visible in sidebar support section.
+- Desktop navigation is now a top bar, not a left sidebar.
+- Notifications route is available at `/notifications` but is hidden from primary navigation by design.
+- Help/About remain visible in the navigation support section/drawer.
+
+Issue: GoDaddy deployment shows old UI after upload
+- Cause: old `index.html` or old `assets/` bundle is still being served, or browser/CDN cache is stale.
+- Action: delete old `public_html/index.html` and `public_html/assets/`, upload the new `dist` contents, then hard refresh.
+- Verify page source references the latest hashed JS/CSS files from the current `dist/index.html`.
+- If auto-deploy is enabled, verify it deploys branch `BiotWeb_NewUI`.
 
 ## 4. Security and Compliance Notes
 
@@ -87,3 +97,4 @@ After release:
 - No backend pagination contract guarantees; client handles many token aliases.
 - Demo pages (notifications/help/profile) are local storage centric.
 - Large production bundles trigger chunk size warnings (not blocking).
+- GoDaddy static hosting requires manual cleanup of old hashed asset folders unless CI/CD handles it.

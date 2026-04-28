@@ -4,6 +4,8 @@
 
 BIOT Web is a browser-based telemetry console for BIOT/ESP32 devices. It supports secure login, fleet monitoring, per-device analysis, historical visualization, alarms, analytics, CSV export, and basic local user management.
 
+This document reflects branch `BiotWeb_NewUI`.
+
 ## 2. Objectives
 
 - Provide near-realtime visibility of device telemetry.
@@ -52,19 +54,24 @@ FR-002 Role Access
 
 FR-003 Dashboard
 - System shall show total devices, online, good, and issue counts.
-- System shall show realtime feed cards with per-device metrics for all available live items.
+- System shall show realtime feed cards with decoded telemetry parameters for all available live items.
 - System shall show fleet health pie breakdown.
+- System shall display realtime refresh copy as `auto 5s`.
 
 FR-004 Device List
 - System shall show all discovered devices.
 - System shall allow filter by `all`, `online`, `good`, `issue`.
-- System shall display wifi and metric cards per device.
+- System shall display wifi and decoded telemetry parameter cards per device.
+- System shall display shift production donut summaries for `type_002` devices when shift count data is available.
 - System shall navigate to device detail page on device selection.
+- System shall display realtime refresh copy as `auto-refresh 5s`.
 
 FR-005 Device Detail
 - System shall provide live mode and history mode.
-- System shall render either press phase line chart or env area chart.
-- System shall allow threshold line inputs for charts.
+- System shall derive numeric metric options from decoded telemetry parameters.
+- System shall allow users to select visible chart metrics.
+- System shall render selected numeric metrics as line charts.
+- System shall allow threshold line inputs when all selected metrics are phase amperage metrics.
 - System shall show offline message when live telemetry is unavailable.
 
 FR-006 Graph Page
@@ -72,7 +79,9 @@ FR-006 Graph Page
 - System shall allow device selection.
 - System shall allow date range selection for history mode.
 - System shall allow manual refresh in history mode.
+- System shall allow users to select visible numeric metrics.
 - System shall format metric values to two decimals in summaries/tooltips.
+- System shall display live refresh copy as `auto-refresh 5s`.
 
 FR-007 Alarms
 - System shall show alarm records from alarm dataset.
@@ -92,8 +101,8 @@ FR-009 Analytics
 - System shall list anomaly queue and signal quality indicators.
 
 FR-010 Notifications/Help/About
-- System shall provide informational pages for help/about in left navigation.
-- System shall keep notifications page available by route (`/notifications`) even when hidden from left menu.
+- System shall provide informational pages for help/about in navigation.
+- System shall keep notifications page available by route (`/notifications`) even when hidden from primary navigation.
 - Help page shall include contact form and organization details.
 
 ## 6. Data and Telemetry Requirements
@@ -111,6 +120,8 @@ DR-002 System shall normalize mixed payload envelopes:
 DR-003 System shall support both environmental metrics and press metrics:
 - Temperature/Humidity aliases.
 - `Press/Phase N Amps` extraction.
+- decoded `parameters` arrays and JSON payload parameter objects.
+- production count aliases for Shift 1, Shift 2, and Shift 3.
 
 DR-004 System shall support history filters by:
 - `deviceId`
@@ -150,7 +161,7 @@ NFR-004 Security (Current Baseline)
 - Must be treated as non-enterprise demo-grade auth unless replaced.
 
 NFR-005 Compatibility
-- Desktop-first and mobile drawer navigation supported.
+- Desktop top navigation and mobile drawer navigation supported.
 - Modern Chromium/Edge/Firefox expected.
 
 ## 9. Assumptions
@@ -165,6 +176,7 @@ NFR-005 Compatibility
 - App builds successfully with `npm run build`.
 - Protected routes redirect to login when unauthenticated.
 - Realtime pages update approximately every 5 seconds.
+- Realtime labels show 5 second refresh timing.
 - History queries return same-day and multi-day data ranges reliably.
 - CSV export contains data for selected device/date filters using IST day boundaries.
 - Device status does not flap offline on minor single-cycle delays.

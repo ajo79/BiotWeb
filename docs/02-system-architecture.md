@@ -1,5 +1,7 @@
 # System Architecture
 
+Branch covered: `BiotWeb_NewUI`.
+
 ## 1. Technology Stack
 
 - Runtime: Node.js (development/build tooling).
@@ -53,8 +55,10 @@ Primary pages:
 - `/about`
 
 Navigation behavior:
-- Left sidebar currently exposes Dashboard/Devices/Graph/Alarms/Export plus Help/About.
-- Notifications route exists but is intentionally hidden from the left sidebar.
+- Desktop uses a sticky horizontal top navigation in `Shell`.
+- Mobile uses a slide-out drawer.
+- Primary navigation exposes Dashboard/Devices/Graph/Alarms/Export plus Help/About.
+- `/analytics`, `/settings`, and `/notifications` routes exist but are not exposed in primary desktop navigation.
 
 ## 4. Data Flow
 
@@ -68,13 +72,15 @@ Navigation behavior:
 ## 5. Polling and Query Behavior
 
 Global query defaults (`main.tsx`):
-- `refetchInterval: 5000`
+- `refetchInterval: 7000`
 - `staleTime: 4000`
 
 Hook-level behavior:
-- Realtime/analytics/alarms poll at 5 seconds.
+- Realtime polls at 5 seconds.
+- Analytics and alarms poll at 7 seconds.
 - History query disables interval and focus/reconnect auto refresh.
 - Graph/DeviceDetail live mode polls, history mode disables polling.
+- Shell also keeps a 5 second realtime query active for status/history prefetch support.
 
 ## 6. Device Health Classification
 
@@ -100,7 +106,17 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 
 `src/utils/metrics.ts`
 - Flatten nested payloads.
-- Extract env and press metrics.
+- Decode telemetry parameter arrays and parameter-like payload objects.
+- Extract env, press, numeric metrics, formatted labels, and shift count values.
+
+`src/components/TelemetryParameterList.tsx`
+- Shared decoded parameter list used by Dashboard and Devices.
+- Hides shift production counters from the general parameter list.
+- Supports compact show-more behavior.
+
+`src/components/ShiftProductionPie.tsx`
+- Shared shift production donut for `type_002` devices.
+- Detects Shift 1/2/3 production count aliases and decoded parameters.
 
 `src/utils/wifi.ts`
 - RSSI normalization and wifi strength labels.
@@ -113,6 +129,12 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 
 `src/pages/MorePage.tsx`
 - Local user CRUD and role assignment.
+
+`src/pages/GraphPage.tsx` and `src/pages/DeviceDetailPage.tsx`
+- Combine live realtime rows with same-day history rows in live mode.
+- Derive numeric metric options from current data.
+- Render selected metrics as multi-line charts with min/max/avg summaries.
+- Enable threshold lines only for phase amperage metric selections.
 
 ## 8. Persistence Model
 

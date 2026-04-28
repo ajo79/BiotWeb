@@ -2,6 +2,8 @@
 
 Use this checklist before release.
 
+Branch covered: `BiotWeb_NewUI`.
+
 ## 1. Build and App Boot
 
 - `npm run build` completes successfully.
@@ -21,6 +23,8 @@ Use this checklist before release.
 
 - Metric cards render (`Total`, `Online`, `Good`, `Issue`).
 - Realtime feed updates approximately every 5 seconds.
+- Realtime feed label shows `auto 5s`.
+- Decoded telemetry parameters render with show-more behavior when more than four values exist.
 - Pie chart renders when data exists.
 - Card navigation to `/devices` filters works.
 
@@ -28,7 +32,10 @@ Use this checklist before release.
 
 - Device cards render with ID/name.
 - Filters `all/online/good/issue` produce correct subsets.
+- Page label shows `auto-refresh 5s`.
 - Offline cards show offline panel.
+- Online cards show decoded telemetry parameters.
+- `type_002` devices show Shift Production donut when shift count values exist.
 - Clicking card opens `/devices/:id`.
 
 ## 5. Device Detail
@@ -36,14 +43,18 @@ Use this checklist before release.
 - Live mode shows chart updates.
 - History mode returns data for known date range.
 - Same-date range returns expected rows.
-- Threshold inputs draw reference lines.
+- Metric selector renders numeric telemetry options.
+- Selected metrics render as line series.
+- Threshold inputs draw reference lines when phase amperage metrics are selected.
 - Offline message appears when device not live.
 
 ## 6. Graph Page
 
 - Live/history toggle works.
+- Live mode label shows `auto-refresh 5s`.
 - Device selector updates chart.
 - History refresh button fetches data and animation triggers.
+- Metric selector can toggle visible numeric chart series.
 - Tooltip values are shown with two decimals.
 - Stats (min/max/avg) render correctly.
 
@@ -77,11 +88,18 @@ Use this checklist before release.
 
 ## 11. Responsive Navigation
 
-- Desktop sidebar navigation works.
+- Desktop top navigation works.
 - Mobile drawer opens/closes and route links work.
-- Sidebar support menu shows `Help Center` and `About` only (Notifications hidden by design).
+- Support menu shows `Help Center` and `About` only (Notifications hidden by design).
 
-## 12. Regression Focus
+## 12. Static Deployment
+
+- `npm run build` creates `dist/index.html`, `dist/assets/*.js`, `dist/assets/*.css`, and `dist/BIOT_logo.png`.
+- GoDaddy `public_html` contains the contents of `dist`, not a nested `dist` directory.
+- Hosted page source references the newest hashed JS/CSS files.
+- Hard refresh or cache clear shows the same UI as local production preview.
+
+## 13. Regression Focus
 
 - Realtime status should not flap offline under normal 5s publish cadence.
 - History mode must not auto-refresh continuously.

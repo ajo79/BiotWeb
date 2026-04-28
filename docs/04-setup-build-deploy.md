@@ -1,5 +1,7 @@
 # Setup, Build, and Deployment Guide
 
+Branch covered: `BiotWeb_NewUI`.
+
 ## 1. Prerequisites
 
 - OS: Windows/macOS/Linux.
@@ -57,13 +59,40 @@ This is a static frontend app. Deploy `dist/` to:
 - Netlify
 - Vercel
 - Nginx/Apache static hosting
+- GoDaddy cPanel static hosting
 
 Key deployment settings:
 - Route rewrite fallback to `index.html` for SPA routes.
 - Set correct cache-control headers for assets.
 - Set environment variable `VITE_API_URL` in CI/CD if backend endpoint differs.
 
-## 7. CI/CD Recommendation
+## 7. GoDaddy cPanel Deployment
+
+Build locally:
+- `npm run build`
+
+Upload only the contents of `dist/`, not the project root.
+
+Expected GoDaddy `public_html` layout:
+- `public_html/index.html`
+- `public_html/assets/<hashed-js-file>.js`
+- `public_html/assets/<hashed-css-file>.css`
+- `public_html/BIOT_logo.png`
+
+Recommended upload flow:
+
+1. In cPanel File Manager, open `public_html`.
+2. Remove the previous `index.html` and `assets/` folder.
+3. Upload a zip containing `dist/*`.
+4. Extract directly into `public_html`.
+5. Confirm `index.html` references the new hashed files under `/assets/`.
+6. Hard refresh the browser cache.
+
+Do not extract into `public_html/dist`; the app expects `index.html` at the web root.
+
+If GoDaddy is connected to GitHub auto-deploy, confirm the deployment branch is `BiotWeb_NewUI` or merge this branch into the configured deployment branch.
+
+## 8. CI/CD Recommendation
 
 Minimal pipeline:
 
@@ -74,10 +103,11 @@ Minimal pipeline:
 Optional:
 - `npm run lint`
 
-## 8. Release Checklist
+## 9. Release Checklist
 
 - Build succeeds with no blocking errors.
 - Realtime and history pages load telemetry.
+- Dashboard, Devices, and Graph display `5s` realtime refresh labels.
 - Same-day history range returns expected data.
 - CSV export works.
 - Date-only history/export filtering honors fixed IST boundaries (`UTC+05:30`).
