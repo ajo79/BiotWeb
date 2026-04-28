@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useDeviceHistory, useRealtime } from "../hooks/queries";
 import { useTimeZoom } from "../hooks/useTimeZoom";
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
   Legend,
   Line,
@@ -14,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { extractPressMetrics, getEnvValues } from "../utils/metrics";
+import { getNumericMetricValue, getNumericParameterMetrics } from "../utils/metrics";
 import {
   DEFAULT_SCOPE_PRESET_ID,
   LIVE_SCOPE_BUFFER_MS,
@@ -42,6 +40,10 @@ const HEARTBEAT_THRESHOLD_MS = 10_000;
 const POLLING_GRANULARITY_MS = 5_000;
 const OFFLINE_AFTER_MS = HEARTBEAT_THRESHOLD_MS + POLLING_GRANULARITY_MS;
 const LIVE_MAX_POINTS = Math.ceil(LIVE_SCOPE_BUFFER_MS / 5_000) + 240;
+const LINE_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#dc2626", "#0891b2", "#7c3aed", "#ea580c", "#64748b"];
+
+type StatSummary = { min: string; max: string; avg: string };
+type ChartMetricOption = { id: string; label: string; order: number; isPhaseAmp: boolean };
 
 const normalizeDateRange = (range: { start: string; end: string }) => {
   if (range.start && range.end && range.start > range.end) {
@@ -79,11 +81,6 @@ const normalizePlotRows = (rows: any[] = []) =>
     .filter((row): row is any => Boolean(row))
     .sort((a, b) => (a.plotTs ?? 0) - (b.plotTs ?? 0));
 
-type StatSummary = { min: string; max: string; avg: string };
-type Stats =
-  | { type: "press"; perPhase: Record<string, StatSummary> }
-  | { type: "env"; temp: StatSummary; hum: StatSummary };
-
 const classify = (item: any) => {
   const statusTag = String(item?._onlineStatus ?? "").trim().toLowerCase();
   const onlineFromState =
@@ -113,11 +110,41 @@ const classify = (item: any) => {
   return { online, commonIssue };
 };
 
+const deriveMetricOptions = (rows: any[]): ChartMetricOption[] => {
+  const byId = new Map<string, ChartMetricOption>();
+  rows.forEach((row) => {
+    getNumericParameterMetrics(row).forEach((metric) => {
+      if (byId.has(metric.id)) return;
+      byId.set(metric.id, {
+        id: metric.id,
+        label: metric.displayLabel,
+        order: metric.order,
+        isPhaseAmp: metric.isPhaseAmp,
+      });
+    });
+  });
+
+  return Array.from(byId.values()).sort(
+    (a, b) => a.order - b.order || a.label.localeCompare(b.label) || a.id.localeCompare(b.id)
+  );
+};
+
+const computeStats = (values: number[]): StatSummary => {
+  const nums = values.filter((v) => Number.isFinite(v));
+  if (!nums.length) return { min: "--", max: "--", avg: "--" };
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+  const fmt = (value: number) => value.toFixed(2);
+  return { min: fmt(min), max: fmt(max), avg: fmt(avg) };
+};
+
 export default function GraphPage() {
   const [mode, setMode] = useState<"live" | "history">("live");
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [liveSeries, setLiveSeries] = useState<any[]>([]);
   const [liveHistoryAnchorTs, setLiveHistoryAnchorTs] = useState(() => Date.now());
+  const [selectedMetricIds, setSelectedMetricIds] = useState<string[]>([]);
   const [thresholds, setThresholds] = useState<{ low: string; high: string }>({ low: "", high: "" });
   const [refreshAnimating, setRefreshAnimating] = useState(false);
   const scopePresetId = DEFAULT_SCOPE_PRESET_ID;
@@ -219,6 +246,14 @@ export default function GraphPage() {
     liveHistoryBounds.to
   );
 
+  useEffect(() => {
+    if (mode !== "live" || !selectedId) return;
+    const timer = window.setInterval(() => {
+      void liveHistory.refetch();
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [mode, selectedId, liveHistory.refetch]);
+
   const historyData = useMemo(() => normalizePlotRows(history.data ?? []), [history.data]);
 
   const liveHistoryData = useMemo(() => normalizePlotRows(liveHistory.data ?? []), [liveHistory.data]);
@@ -302,9 +337,27 @@ export default function GraphPage() {
     [modeData, visibleStartTs, visibleEndTs]
   );
 
+  const metricOptions = useMemo(() => deriveMetricOptions(modeData), [modeData]);
+
+  useEffect(() => {
+    setSelectedMetricIds((prev) => {
+      const available = new Set(metricOptions.map((metric) => metric.id));
+      const kept = prev.filter((id) => available.has(id));
+      if (kept.length) return kept;
+      if (!metricOptions.length) return [];
+      return metricOptions.map((metric) => metric.id);
+    });
+  }, [metricOptions]);
+
+  const selectedMetrics = useMemo(
+    () => metricOptions.filter((metric) => selectedMetricIds.includes(metric.id)),
+    [metricOptions, selectedMetricIds]
+  );
+  const metricSet = useMemo(() => new Set(selectedMetricIds), [selectedMetricIds]);
+
   const axisTicks = useMemo(() => {
     if (mode === "live") {
-      return buildTicksByIntervalMs(visibleStartTs, visibleEndTs, scopeDivisionMs, 2000);
+      return buildTicksByIntervalMs(visibleStartTs, visibleEndTs, scopeDivisionMs, 5000);
     }
     return buildDivisionTicks(visibleStartTs, visibleEndTs);
   }, [mode, visibleStartTs, visibleEndTs, scopeDivisionMs]);
@@ -326,45 +379,23 @@ export default function GraphPage() {
   const lastSeenTs = coerceEpochMs(selected?.ts);
   const lastSeen = Number.isFinite(lastSeenTs) ? new Date(lastSeenTs as number).toLocaleString() : "unknown";
 
-  const pressIds = useMemo(() => {
-    const ids = new Set<string>();
-    chartData.forEach((row) => {
-      extractPressMetrics(row).forEach((phase) => ids.add(phase.id));
-    });
-    return Array.from(ids).sort((a, b) => Number(a) - Number(b));
-  }, [chartData]);
-  const isPress = pressIds.length > 0;
   const lowThreshold = Number(thresholds.low);
   const highThreshold = Number(thresholds.high);
-  const hasLow = Number.isFinite(lowThreshold);
-  const hasHigh = Number.isFinite(highThreshold);
+  const thresholdEligible = selectedMetrics.length > 0 && selectedMetrics.every((metric) => metric.isPhaseAmp);
+  const hasLow = thresholdEligible && Number.isFinite(lowThreshold);
+  const hasHigh = thresholdEligible && Number.isFinite(highThreshold);
 
-  const computeStats = (values: number[]) => {
-    const nums = values.filter((v) => Number.isFinite(v));
-    if (!nums.length) return { min: "--", max: "--", avg: "--" };
-    const min = Math.min(...nums);
-    const max = Math.max(...nums);
-    const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
-    const fmt = (value: number) => value.toFixed(2);
-    return { min: fmt(min), max: fmt(max), avg: fmt(avg) };
-  };
-
-  const stats = useMemo<Stats>(() => {
-    if (isPress) {
-      const perPhase: Record<string, StatSummary> = {};
-      pressIds.forEach((pid) => {
-        const vals = chartData.map((row) => {
-          const phase = extractPressMetrics(row).find((x) => x.id === pid);
-          return phase ? phase.amps : NaN;
-        });
-        perPhase[pid] = computeStats(vals);
+  const statsByMetric = useMemo(() => {
+    const out: Record<string, StatSummary> = {};
+    selectedMetrics.forEach((metric) => {
+      const values = chartData.map((row) => {
+        const value = getNumericMetricValue(row, metric.id);
+        return value ?? NaN;
       });
-      return { type: "press", perPhase };
-    }
-    const tempVals = chartData.map((row) => getEnvValues(row).temperature ?? NaN);
-    const humVals = chartData.map((row) => getEnvValues(row).humidity ?? NaN);
-    return { type: "env", temp: computeStats(tempVals), hum: computeStats(humVals) };
-  }, [chartData, isPress, pressIds]);
+      out[metric.id] = computeStats(values);
+    });
+    return out;
+  }, [chartData, selectedMetrics]);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
@@ -394,8 +425,7 @@ export default function GraphPage() {
     const nextRange = normalizeDateRange(draftRange);
     setDraftRange(nextRange);
     setRefreshAnimating(true);
-    const changed =
-      nextRange.start !== appliedRange.start || nextRange.end !== appliedRange.end;
+    const changed = nextRange.start !== appliedRange.start || nextRange.end !== appliedRange.end;
     if (changed) {
       setAppliedRange(nextRange);
     } else {
@@ -403,6 +433,23 @@ export default function GraphPage() {
     }
     setTimeout(() => setRefreshAnimating(false), 350);
   };
+
+  const toggleMetric = (metricId: string) => {
+    setSelectedMetricIds((prev) => {
+      if (prev.includes(metricId)) {
+        const next = prev.filter((id) => id !== metricId);
+        return next.length ? next : prev;
+      }
+      return [...prev, metricId];
+    });
+  };
+
+  const modeLabel =
+    chartData.length === 0
+      ? "Device Metrics"
+      : selectedMetrics.length
+      ? `${selectedMetrics.length} selected`
+      : "No metrics selected";
 
   return (
     <div className="space-y-4">
@@ -461,8 +508,7 @@ export default function GraphPage() {
         )}
 
         <div className="text-sm text-slate-600">
-          Status:{" "}
-          <span className="text-slate-900">{status.online ? (status.commonIssue ? "Alarm" : "Online") : "Offline"}</span>
+          Status: <span className="text-slate-900">{status.online ? (status.commonIssue ? "Alarm" : "Online") : "Offline"}</span>
         </div>
 
         {mode === "history" && (
@@ -477,7 +523,32 @@ export default function GraphPage() {
           </button>
         )}
 
-        {isPress && (
+        <div className="min-w-[240px] flex-1">
+          <p className="text-xs text-slate-400">Metrics</p>
+          {metricOptions.length ? (
+            <div className="mt-1 flex max-h-28 flex-wrap gap-2 overflow-auto pr-1">
+              {metricOptions.map((metric) => (
+                <button
+                  key={metric.id}
+                  type="button"
+                  onClick={() => toggleMetric(metric.id)}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+                    metricSet.has(metric.id)
+                      ? "border-blue-300 bg-blue-600 text-white"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                  title={metric.label}
+                >
+                  {metric.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">No numeric parameters in current data.</p>
+          )}
+        </div>
+
+        {thresholdEligible && (
           <div className="flex items-center gap-2 text-sm">
             <label className="flex flex-col">
               Low threshold (A)
@@ -549,10 +620,7 @@ export default function GraphPage() {
             Points: <span className="text-slate-900 font-semibold">{chartData.length}</span>
           </div>
           <div>
-            Mode:{" "}
-            <span className="text-slate-900 font-semibold">
-              {chartData.length === 0 ? "Device Metrics" : isPress ? "Press Amps" : "Env (Temp/Humidity)"}
-            </span>
+            Mode: <span className="text-slate-900 font-semibold">{modeLabel}</span>
             <span className="ml-2 text-slate-500">
               Time/Div: <span className="font-semibold text-slate-900">{currentTimeDiv}</span>
             </span>
@@ -562,29 +630,16 @@ export default function GraphPage() {
               Device is streamed against oscilloscope window and divisions.
             </div>
           )}
-          {stats.type === "press" ? (
-            <div className="col-span-2 flex flex-wrap gap-3">
-              {pressIds.map((pid) => (
-                <div key={pid} className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-                  <span className="font-semibold text-slate-800">Phase {pid}</span>{" "}
-                  <span>
-                    min {stats.perPhase[pid].min} / max {stats.perPhase[pid].max} / avg {stats.perPhase[pid].avg}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="col-span-2 flex flex-wrap gap-3">
-              <div className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-                <span className="font-semibold text-slate-800">Temp</span> min {stats.temp.min} / max{" "}
-                {stats.temp.max} / avg {stats.temp.avg}
+          <div className="col-span-2 flex flex-wrap gap-3">
+            {selectedMetrics.map((metric) => (
+              <div key={metric.id} className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+                <span className="font-semibold text-slate-800">{metric.label}</span>{" "}
+                <span>
+                  min {statsByMetric[metric.id]?.min ?? "--"} / max {statsByMetric[metric.id]?.max ?? "--"} / avg {statsByMetric[metric.id]?.avg ?? "--"}
+                </span>
               </div>
-              <div className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-                <span className="font-semibold text-slate-800">Humidity</span> min {stats.hum.min} / max{" "}
-                {stats.hum.max} / avg {stats.hum.avg}
-              </div>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
 
         {mode === "live" && !status.online && (
@@ -603,7 +658,9 @@ export default function GraphPage() {
                 : "No realtime data available."
               : "No data in this range/window."}
           </p>
-        ) : isPress ? (
+        ) : !selectedMetrics.length ? (
+          <p className="text-sm text-slate-500">Select at least one metric to render the chart.</p>
+        ) : (
           <div
             className="h-[22rem] -mx-2 cursor-zoom-in sm:-mx-3 lg:-mx-4"
             ref={setWheelElement}
@@ -621,68 +678,6 @@ export default function GraphPage() {
                   stroke="#94a3b8"
                   minTickGap={mode === "history" ? 48 : 20}
                   tick={{ fontSize: 12 }}
-                />
-                <YAxis
-                  width={52}
-                  stroke="#94a3b8"
-                  tick={{ fontSize: 12 }}
-                  label={{ value: "Amps", angle: -90, position: "insideLeft", fill: "#64748b" }}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend verticalAlign="top" height={30} />
-                {hasLow && (
-                  <ReferenceLine
-                    y={lowThreshold}
-                    stroke="#f97316"
-                    strokeDasharray="6 4"
-                    label={{ value: `Low ${lowThreshold}`, position: "right", fill: "#f97316", fontSize: 11 }}
-                  />
-                )}
-                {hasHigh && (
-                  <ReferenceLine
-                    y={highThreshold}
-                    stroke="#dc2626"
-                    strokeDasharray="6 4"
-                    label={{ value: `High ${highThreshold}`, position: "right", fill: "#dc2626", fontSize: 11 }}
-                  />
-                )}
-                {pressIds.map((pid, idx) => (
-                  <Line
-                    key={pid}
-                    type="monotone"
-                    dataKey={(row: any) => {
-                      const phase = extractPressMetrics(row).find((item) => item.id === pid);
-                      return phase ? phase.amps : 0;
-                    }}
-                    name={`Phase ${pid} Amps`}
-                    stroke={["#2563eb", "#16a34a", "#f59e0b", "#dc2626"][idx % 4]}
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 3.5, fill: "#2563eb", stroke: "#ffffff", strokeWidth: 1.5 }}
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div
-            className="h-[22rem] -mx-2 cursor-zoom-in sm:-mx-3 lg:-mx-4"
-            ref={setWheelElement}
-            title="Use mouse wheel to zoom the time axis"
-          >
-            <ResponsiveContainer>
-              <AreaChart data={chartData} margin={chartMargin}>
-                <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" />
-                <XAxis
-                  type="number"
-                  dataKey="plotTs"
-                  domain={[visibleStartTs, visibleEndTs]}
-                  ticks={axisTicks}
-                  tickFormatter={(value) => formatXAxisTick(Number(value))}
-                  stroke="#94a3b8"
-                  minTickGap={mode === "history" ? 48 : 20}
-                  tick={{ fontSize: 12 }}
-                  label={{ value: "Time", position: "insideBottom", offset: -16, fill: "#64748b" }}
                 />
                 <YAxis
                   width={52}
@@ -708,27 +703,23 @@ export default function GraphPage() {
                     label={{ value: `High ${highThreshold}`, position: "right", fill: "#dc2626", fontSize: 11 }}
                   />
                 )}
-                <Area
-                  type="monotone"
-                  dataKey={(row: any) => getEnvValues(row).temperature ?? 0}
-                  name="Temp (C)"
-                  stroke="#2563eb"
-                  fill="#dbeafe"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 3.5, fill: "#2563eb", stroke: "#ffffff", strokeWidth: 1.5 }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey={(row: any) => getEnvValues(row).humidity ?? 0}
-                  name="Humidity (%)"
-                  stroke="#0d9488"
-                  fill="#ccfbf1"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 3.5, fill: "#0d9488", stroke: "#ffffff", strokeWidth: 1.5 }}
-                />
-              </AreaChart>
+                {selectedMetrics.map((metric, idx) => (
+                  <Line
+                    key={metric.id}
+                    type="monotone"
+                    dataKey={(row: any) => {
+                      const value = getNumericMetricValue(row, metric.id);
+                      return value ?? null;
+                    }}
+                    name={metric.label}
+                    stroke={LINE_COLORS[idx % LINE_COLORS.length]}
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 3.5, fill: LINE_COLORS[idx % LINE_COLORS.length], stroke: "#ffffff", strokeWidth: 1.5 }}
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
             </ResponsiveContainer>
           </div>
         )}
@@ -751,7 +742,6 @@ export default function GraphPage() {
             />
           </div>
         )}
-
       </div>
     </div>
   );

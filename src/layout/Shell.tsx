@@ -1,5 +1,4 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../auth/auth";
@@ -159,7 +158,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   );
   const allNav = useMemo(() => [...nav, ...secondaryNav], [secondaryNav]);
   const active = useMemo(() => allNav.find((n) => pathname === n.to || pathname.startsWith(n.to + "/")), [pathname, allNav]);
-  const apiUrl = (import.meta.env.VITE_API_URL as string) ?? "https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod";
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -211,93 +209,74 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen text-slate-900">
       <div className="absolute inset-0 bg-white"></div>
       <div className="relative max-w-[92rem] mx-auto px-6 lg:px-8 pb-8 min-h-screen flex flex-col">
-        <div className="grid lg:grid-cols-[14rem,1fr] gap-8 lg:gap-9 flex-1">
-          <aside className="w-full lg:w-60 flex-shrink-0 pt-10 sticky top-0 h-screen hidden lg:block">
-          <div className="text-xl font-semibold tracking-tight mb-2 flex items-center">
-            <img
-              src="/BIOT_logo.png"
-              alt="BIOT logo"
-              className="h-16 w-60 rounded-xl object-contain shadow-glow border border-slate-200 bg-white p-1"
-            />
-          </div>
-          {state.userId && <div className="mb-4 text-xs text-slate-500">User ID: <span className="font-semibold text-slate-700">{state.userId}</span></div>}
-          <div className="space-y-2">
-            {nav.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  `flex items-center justify-between px-3 py-2 rounded-xl transition hover:-translate-y-0.5 hover:shadow-glow ${isActive ? "border border-blue-400 bg-blue-50" : "border border-slate-300 bg-white"}`
-                }
-              >
-                {({ isActive }) => {
-                  const Icon = item.icon;
-                  return (
-                    <>
-                      <span className="flex items-center gap-3 font-semibold">
-                        <Icon className={`h-4 w-4 ${isActive ? "text-blue-600" : "text-slate-400"}`} />
-                        {item.label}
-                      </span>
-                      {isActive && <motion.div layoutId="pill" className="w-2 h-2 rounded-full bg-blue-600" />}
-                    </>
-                  );
-                }}
-              </NavLink>
-            ))}
-          </div>
-          <div className="mt-6 text-xs font-semibold text-slate-400">Support</div>
-          <div className="mt-2 space-y-2">
-            {secondaryNav.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  `flex items-center justify-between px-3 py-2 rounded-xl transition hover:-translate-y-0.5 hover:shadow-glow ${isActive ? "border border-blue-400 bg-blue-50" : "border border-slate-300 bg-white"}`
-                }
-              >
-                {({ isActive }) => {
-                  const Icon = item.icon;
-                  return (
-                    <>
-                      <span className="flex items-center gap-3 font-semibold">
-                        <Icon className={`h-4 w-4 ${isActive ? "text-blue-600" : "text-slate-400"}`} />
-                        {item.label}
-                      </span>
-                    </>
-                  );
-                }}
-              </NavLink>
-            ))}
-            <button
-              onClick={handleSignOut}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 font-semibold transition hover:-translate-y-0.5 hover:shadow-glow"
-            >
-              <span className="flex items-center gap-3">
-                <span className="h-4 w-4 inline-flex items-center justify-center text-rose-700">⏻</span>
-                Sign Out
-              </span>
-            </button>
-          </div>
-          </aside>
-
-          <main className="flex-1 w-full pt-8 lg:pt-10 pl-1">
-            <header className="flex flex-wrap items-center gap-3 justify-between mb-6">
-              <div>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="lg:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 bg-white shadow-ambient"
-                    onClick={() => setMenuOpen(true)}
-                    aria-label="Open menu"
-                  >
-                    <span className="text-xl leading-none">☰</span>
-                  </button>
-                <h1 className="text-3xl font-semibold">{active?.label ?? "Dashboard"}</h1>
+        <header className="sticky top-0 z-40 hidden lg:block pt-4">
+          <div className="glass rounded-2xl px-4 py-3 border border-slate-200">
+            <div className="flex items-center gap-4">
+              <img
+                src="/BIOT_logo.png"
+                alt="BIOT logo"
+                className="h-12 w-44 rounded-xl object-contain border border-slate-200 bg-white p-1 flex-shrink-0"
+              />
+              <nav className="min-w-0 flex-1 overflow-x-auto">
+                <div className="flex items-center gap-2 min-w-max">
+                  {allNav.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2 rounded-xl border px-3 py-1.5 text-sm font-semibold transition ${
+                          isActive
+                            ? "border-blue-400 bg-blue-50 text-blue-700"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
+                        }`
+                      }
+                    >
+                      {({ isActive }) => {
+                        const Icon = item.icon;
+                        return (
+                          <>
+                            <Icon className={`h-4 w-4 ${isActive ? "text-blue-600" : "text-slate-400"}`} />
+                            <span>{item.label}</span>
+                          </>
+                        );
+                      }}
+                    </NavLink>
+                  ))}
                 </div>
+              </nav>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                {state.userId && (
+                  <div className="text-xs text-slate-500 whitespace-nowrap">
+                    User ID: <span className="font-semibold text-slate-700">{state.userId}</span>
+                  </div>
+                )}
+                <button
+                  onClick={handleSignOut}
+                  className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100"
+                >
+                  <span className="h-4 w-4 inline-flex items-center justify-center text-rose-700">⏻</span>
+                  Sign Out
+                </button>
               </div>
-            </header>
-            {children}
-          </main>
-        </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 w-full pt-8 lg:pt-6 pl-1">
+          <header className="flex flex-wrap items-center gap-3 justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <button
+                className="lg:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 bg-white shadow-ambient"
+                onClick={() => setMenuOpen(true)}
+                aria-label="Open menu"
+              >
+                <span className="text-xl leading-none">☰</span>
+              </button>
+              <h1 className="text-3xl font-semibold">{active?.label ?? "Dashboard"}</h1>
+            </div>
+          </header>
+          {children}
+        </main>
         <div className="pt-10 bg-white">
           <footer className="border-t border-slate-200 pt-6 text-center text-xs text-slate-500">
             Copyright © 2026, BlackStar Products Pvt. Ltd. All Rights Reserved.

@@ -4,10 +4,10 @@ import { StatusPill } from "../components/StatusPill";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMotionPreset } from "../utils/motion";
 import { useNavigate, useLocation } from "react-router-dom";
-import { extractPressMetrics, getEnvValues } from "../utils/metrics";
 import { getWifiStrength } from "../utils/wifi";
-import { formatTwoDecimals } from "../utils/numberFormat";
 import WifiIcon from "../components/WifiIcon";
+import TelemetryParameterList from "../components/TelemetryParameterList";
+import ShiftProductionPie from "../components/ShiftProductionPie";
 
 const HEARTBEAT_THRESHOLD_MS = 10_000;
 const POLLING_GRANULARITY_MS = 5_000;
@@ -37,6 +37,10 @@ function classify(item: any) {
   });
   const category = !online || commonIssue ? "issue" : "good";
   return { online, commonIssue, category };
+}
+
+function isType002(item: any) {
+  return String(item?.deviceType ?? "").trim().toLowerCase() === "type_002";
 }
 
 export default function DevicesPage() {
@@ -78,8 +82,6 @@ export default function DevicesPage() {
         <AnimatePresence>
           {items.map((item) => {
             const state = classify(item);
-            const presses = extractPressMetrics(item);
-            const env = getEnvValues(item);
             const wifi = state.online ? getWifiStrength(item) : undefined;
             return (
               <motion.div
@@ -104,25 +106,14 @@ export default function DevicesPage() {
                   <div className="mt-3 rounded-xl border border-white/5 bg-white/5 px-3 py-2 text-sm text-slate-400">
                     Device is offline. Live telemetry is unavailable.
                   </div>
-                ) : presses.length ? (
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                    {presses.slice(0, 4).map((p) => (
-                      <div key={p.id} className="glass rounded-xl p-3 border border-white/5">
-                        <p className="text-slate-400 text-xs">Phase {p.id} Amps</p>
-                        <p className="text-blue-700 text-lg font-semibold">{p.amps.toFixed(2)} A</p>
-                      </div>
-                    ))}
-                  </div>
                 ) : (
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                    <div className="glass rounded-xl p-3 border border-white/5">
-                      <p className="text-slate-400 text-xs">Temperature</p>
-                      <p className="text-blue-700 text-lg font-semibold">{formatTwoDecimals(env.temperature)}°C</p>
-                    </div>
-                    <div className="glass rounded-xl p-3 border border-white/5">
-                      <p className="text-slate-400 text-xs">Humidity</p>
-                      <p className="text-teal-600 text-lg font-semibold">{formatTwoDecimals(env.humidity)}%</p>
-                    </div>
+                  <div className="mt-3 rounded-xl border border-white/5 bg-white/5 px-3 py-2">
+                    <TelemetryParameterList item={item} maxVisible={4} />
+                  </div>
+                )}
+                {isType002(item) && (
+                  <div className="mt-3 rounded-xl border border-white/5 bg-white/5 px-3 py-2">
+                    <ShiftProductionPie item={item} />
                   </div>
                 )}
                 <div className="mt-2 text-xs text-slate-400">Updated: {item.ts ? new Date(item.ts).toLocaleString() : "--"}</div>

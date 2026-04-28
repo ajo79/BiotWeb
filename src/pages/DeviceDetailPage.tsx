@@ -3,8 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useDeviceHistory, useRealtime } from "../hooks/queries";
 import { useTimeZoom } from "../hooks/useTimeZoom";
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
   Legend,
   Line,
@@ -17,7 +15,7 @@ import {
 } from "recharts";
 import { motion } from "framer-motion";
 import { useMotionPreset } from "../utils/motion";
-import { extractPressMetrics, getEnvValues } from "../utils/metrics";
+import { getNumericMetricValue, getNumericParameterMetrics } from "../utils/metrics";
 import {
   DEFAULT_SCOPE_PRESET_ID,
   LIVE_SCOPE_BUFFER_MS,
@@ -45,6 +43,10 @@ const HEARTBEAT_THRESHOLD_MS = 10_000;
 const POLLING_GRANULARITY_MS = 5_000;
 const OFFLINE_AFTER_MS = HEARTBEAT_THRESHOLD_MS + POLLING_GRANULARITY_MS;
 const LIVE_MAX_POINTS = Math.ceil(LIVE_SCOPE_BUFFER_MS / 5_000) + 240;
+const LINE_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#dc2626", "#0891b2", "#7c3aed", "#ea580c", "#64748b"];
+
+type StatSummary = { min: string; max: string; avg: string };
+type ChartMetricOption = { id: string; label: string; order: number; isPhaseAmp: boolean };
 
 function normalizeDateRange(range: { start: string; end: string }) {
   if (range.start && range.end && range.start > range.end) {
@@ -82,12 +84,42 @@ const normalizePlotRows = (rows: any[] = []) =>
     .filter((row): row is any => Boolean(row))
     .sort((a, b) => (a.plotTs ?? 0) - (b.plotTs ?? 0));
 
+const deriveMetricOptions = (rows: any[]): ChartMetricOption[] => {
+  const byId = new Map<string, ChartMetricOption>();
+  rows.forEach((row) => {
+    getNumericParameterMetrics(row).forEach((metric) => {
+      if (byId.has(metric.id)) return;
+      byId.set(metric.id, {
+        id: metric.id,
+        label: metric.displayLabel,
+        order: metric.order,
+        isPhaseAmp: metric.isPhaseAmp,
+      });
+    });
+  });
+
+  return Array.from(byId.values()).sort(
+    (a, b) => a.order - b.order || a.label.localeCompare(b.label) || a.id.localeCompare(b.id)
+  );
+};
+
+const computeStats = (values: number[]): StatSummary => {
+  const nums = values.filter((v) => Number.isFinite(v));
+  if (!nums.length) return { min: "--", max: "--", avg: "--" };
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+  const fmt = (value: number) => value.toFixed(2);
+  return { min: fmt(min), max: fmt(max), avg: fmt(avg) };
+};
+
 export default function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const motionPreset = useMotionPreset();
   const [mode, setMode] = useState<"live" | "history">("live");
   const [liveSeries, setLiveSeries] = useState<any[]>([]);
   const [liveHistoryAnchorTs, setLiveHistoryAnchorTs] = useState(() => Date.now());
+  const [selectedMetricIds, setSelectedMetricIds] = useState<string[]>([]);
   const [thresholds, setThresholds] = useState<{ low: string; high: string }>({ low: "", high: "" });
   const scopePresetId = DEFAULT_SCOPE_PRESET_ID;
   const lastTsRef = useRef<number | null>(null);
@@ -119,6 +151,14 @@ export default function DeviceDetailPage() {
     liveHistoryBounds.from,
     liveHistoryBounds.to
   );
+
+  useEffect(() => {
+    if (mode !== "live" || !id) return;
+    const timer = window.setInterval(() => {
+      void liveHistoryQuery.refetch();
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [mode, id, liveHistoryQuery.refetch]);
 
   const liveItem = useMemo(() => {
     const items = realtime.data?.items ?? [];
@@ -257,9 +297,34 @@ export default function DeviceDetailPage() {
     [seriesData, visibleStartTs, visibleEndTs]
   );
 
+  const metricOptions = useMemo(() => deriveMetricOptions(seriesData), [seriesData]);
+
+  useEffect(() => {
+    setSelectedMetricIds((prev) => {
+      const available = new Set(metricOptions.map((metric) => metric.id));
+      const kept = prev.filter((id) => available.has(id));
+      if (kept.length) return kept;
+      if (!metricOptions.length) return [];
+
+      const defaults = metricOptions.filter((metric) => metric.isPhaseAmp).map((metric) => metric.id);
+      const firstNonPhase = metricOptions.find((metric) => !metric.isPhaseAmp)?.id;
+      if (firstNonPhase && !defaults.includes(firstNonPhase)) {
+        defaults.push(firstNonPhase);
+      }
+      if (!defaults.length) defaults.push(metricOptions[0].id);
+      return defaults;
+    });
+  }, [metricOptions]);
+
+  const selectedMetrics = useMemo(
+    () => metricOptions.filter((metric) => selectedMetricIds.includes(metric.id)),
+    [metricOptions, selectedMetricIds]
+  );
+  const metricSet = useMemo(() => new Set(selectedMetricIds), [selectedMetricIds]);
+
   const axisTicks = useMemo(() => {
     if (mode === "live") {
-      return buildTicksByIntervalMs(visibleStartTs, visibleEndTs, scopeDivisionMs, 2000);
+      return buildTicksByIntervalMs(visibleStartTs, visibleEndTs, scopeDivisionMs, 5000);
     }
     return buildDivisionTicks(visibleStartTs, visibleEndTs);
   }, [mode, visibleStartTs, visibleEndTs, scopeDivisionMs]);
@@ -276,19 +341,40 @@ export default function DeviceDetailPage() {
     [visibleStartTs, visibleEndTs]
   );
 
-  const pressIds = useMemo(
-    () =>
-      Array.from(
-        new Set(chartData.flatMap((row) => extractPressMetrics(row).map((phase) => phase.id)))
-      ).sort((a, b) => Number(a) - Number(b)),
-    [chartData]
-  );
-  const hasPress = pressIds.length > 0;
-  const modeLabel = chartData.length === 0 ? "Device Metrics" : hasPress ? "Press Amps" : "Env (Temp/Humidity)";
   const lowThreshold = Number(thresholds.low);
   const highThreshold = Number(thresholds.high);
-  const hasLow = Number.isFinite(lowThreshold);
-  const hasHigh = Number.isFinite(highThreshold);
+  const thresholdEligible = selectedMetrics.length > 0 && selectedMetrics.every((metric) => metric.isPhaseAmp);
+  const hasLow = thresholdEligible && Number.isFinite(lowThreshold);
+  const hasHigh = thresholdEligible && Number.isFinite(highThreshold);
+
+  const statsByMetric = useMemo(() => {
+    const out: Record<string, StatSummary> = {};
+    selectedMetrics.forEach((metric) => {
+      const values = chartData.map((row) => {
+        const value = getNumericMetricValue(row, metric.id);
+        return value ?? NaN;
+      });
+      out[metric.id] = computeStats(values);
+    });
+    return out;
+  }, [chartData, selectedMetrics]);
+
+  const toggleMetric = (metricId: string) => {
+    setSelectedMetricIds((prev) => {
+      if (prev.includes(metricId)) {
+        const next = prev.filter((id) => id !== metricId);
+        return next.length ? next : prev;
+      }
+      return [...prev, metricId];
+    });
+  };
+
+  const modeLabel =
+    chartData.length === 0
+      ? "Device Metrics"
+      : selectedMetrics.length
+      ? `${selectedMetrics.length} selected`
+      : "No metrics selected";
 
   return (
     <div className="space-y-4">
@@ -332,8 +418,7 @@ export default function DeviceDetailPage() {
               const nextRange = normalizeDateRange(draftRange);
               setDraftRange(nextRange);
               setMode("history");
-              const changed =
-                nextRange.start !== appliedRange.start || nextRange.end !== appliedRange.end;
+              const changed = nextRange.start !== appliedRange.start || nextRange.end !== appliedRange.end;
               if (changed) {
                 setAppliedRange(nextRange);
               } else {
@@ -350,33 +435,60 @@ export default function DeviceDetailPage() {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 text-sm">
-          <label className="flex flex-col">
-            Low threshold {hasPress ? "(A)" : ""}
-            <input
-              value={thresholds.low}
-              onChange={(e) => setThresholds((prev) => ({ ...prev, low: e.target.value }))}
-              className="glass rounded-lg px-3 py-2 border border-white/5 bg-panel w-28"
-              placeholder="e.g. 0.5"
-            />
-          </label>
-          <label className="flex flex-col">
-            High threshold {hasPress ? "(A)" : ""}
-            <input
-              value={thresholds.high}
-              onChange={(e) => setThresholds((prev) => ({ ...prev, high: e.target.value }))}
-              className="glass rounded-lg px-3 py-2 border border-white/5 bg-panel w-28"
-              placeholder="e.g. 5.0"
-            />
-          </label>
+        <div className="flex-1 min-w-[220px]">
+          <p className="text-xs text-slate-400">Metrics</p>
+          {metricOptions.length ? (
+            <div className="mt-1 flex max-h-24 flex-wrap gap-2 overflow-auto pr-1">
+              {metricOptions.map((metric) => (
+                <button
+                  key={metric.id}
+                  type="button"
+                  onClick={() => toggleMetric(metric.id)}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+                    metricSet.has(metric.id)
+                      ? "border-blue-300 bg-blue-600 text-white"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                  title={metric.label}
+                >
+                  {metric.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">No numeric parameters in current data.</p>
+          )}
         </div>
+
+        {thresholdEligible && (
+          <div className="flex items-center gap-2 text-sm">
+            <label className="flex flex-col">
+              Low threshold (A)
+              <input
+                value={thresholds.low}
+                onChange={(e) => setThresholds((prev) => ({ ...prev, low: e.target.value }))}
+                className="glass rounded-lg px-3 py-2 border border-white/5 bg-panel w-28"
+                placeholder="e.g. 0.5"
+              />
+            </label>
+            <label className="flex flex-col">
+              High threshold (A)
+              <input
+                value={thresholds.high}
+                onChange={(e) => setThresholds((prev) => ({ ...prev, high: e.target.value }))}
+                className="glass rounded-lg px-3 py-2 border border-white/5 bg-panel w-28"
+                placeholder="e.g. 5.0"
+              />
+            </label>
+          </div>
+        )}
       </div>
 
       <motion.div className="glass rounded-2xl p-5 border border-white/5 shadow-ambient" {...motionPreset}>
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-sm text-slate-400">{mode === "live" ? "Live" : "History"}</p>
-            <h2 className="text-xl font-semibold">{chartData.length === 0 ? "Device Metrics" : hasPress ? "Phase Amps" : "Temperature / Humidity"}</h2>
+            <h2 className="text-xl font-semibold">Device Metrics</h2>
             <p className="mt-1 text-xs text-slate-600">
               Mode: <span className="font-semibold text-slate-900">{modeLabel}</span>
               <span className="ml-2">
@@ -427,6 +539,17 @@ export default function DeviceDetailPage() {
           </div>
         )}
 
+        <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-600">
+          {selectedMetrics.map((metric) => (
+            <div key={metric.id} className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+              <span className="font-semibold text-slate-800">{metric.label}</span>{" "}
+              <span>
+                min {statsByMetric[metric.id]?.min ?? "--"} / max {statsByMetric[metric.id]?.max ?? "--"} / avg {statsByMetric[metric.id]?.avg ?? "--"}
+              </span>
+            </div>
+          ))}
+        </div>
+
         {chartData.length === 0 ? (
           <p className="text-sm text-slate-400">
             {mode === "live"
@@ -435,7 +558,9 @@ export default function DeviceDetailPage() {
                 : "Waiting for live data..."
               : "No data for selected window."}
           </p>
-        ) : hasPress ? (
+        ) : !selectedMetrics.length ? (
+          <p className="text-sm text-slate-500">Select at least one metric to render the chart.</p>
+        ) : (
           <div
             className="h-[21rem] -mx-2 cursor-zoom-in sm:-mx-3 lg:-mx-4"
             ref={setWheelElement}
@@ -483,103 +608,23 @@ export default function DeviceDetailPage() {
                     label={{ value: `High ${highThreshold}`, position: "right", fill: "#dc2626", fontSize: 11 }}
                   />
                 )}
-                {pressIds.map((pid, idx) => (
+                {selectedMetrics.map((metric, idx) => (
                   <Line
-                    key={pid}
+                    key={metric.id}
                     type="monotone"
                     dataKey={(row: any) => {
-                      const phase = extractPressMetrics(row).find((item) => item.id === pid);
-                      return phase ? phase.amps : 0;
+                      const value = getNumericMetricValue(row, metric.id);
+                      return value ?? null;
                     }}
-                    name={`Phase ${pid} Amps`}
-                    stroke={["#2563eb", "#16a34a", "#f59e0b", "#dc2626"][idx % 4]}
+                    name={metric.label}
+                    stroke={LINE_COLORS[idx % LINE_COLORS.length]}
                     strokeWidth={2}
                     dot={false}
-                    activeDot={{ r: 3.5, fill: "#2563eb", stroke: "#ffffff", strokeWidth: 1.5 }}
+                    activeDot={{ r: 3.5, fill: LINE_COLORS[idx % LINE_COLORS.length], stroke: "#ffffff", strokeWidth: 1.5 }}
+                    connectNulls
                   />
                 ))}
               </LineChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div
-            className="h-[21rem] -mx-2 cursor-zoom-in sm:-mx-3 lg:-mx-4"
-            ref={setWheelElement}
-            title="Use mouse wheel to zoom the time axis"
-          >
-            <ResponsiveContainer>
-              <AreaChart data={chartData} margin={chartMargin}>
-                <defs>
-                  <linearGradient id="temp" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.6} />
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="hum" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0d9488" stopOpacity={0.6} />
-                    <stop offset="95%" stopColor="#0d9488" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" />
-                <XAxis
-                  type="number"
-                  dataKey="plotTs"
-                  domain={[visibleStartTs, visibleEndTs]}
-                  ticks={axisTicks}
-                  tickFormatter={(value) => formatXAxisTick(Number(value))}
-                  stroke="#94a3b8"
-                  minTickGap={mode === "history" ? 48 : 20}
-                  tick={{ fontSize: 12 }}
-                />
-                <YAxis stroke="#94a3b8" width={52} tick={{ fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{ background: "#ffffff", border: "1px solid #e5e7eb" }}
-                  labelStyle={{ color: "#0f172a" }}
-                  labelFormatter={(value) => {
-                    const ts = Number(value);
-                    return Number.isFinite(ts) ? formatFullDateTimeTick(ts) : String(value ?? "");
-                  }}
-                  formatter={(value: any) =>
-                    Number.isFinite(Number(value)) ? Number(value).toFixed(2) : value
-                  }
-                />
-                <Legend verticalAlign="top" height={30} />
-                {hasLow && (
-                  <ReferenceLine
-                    y={lowThreshold}
-                    stroke="#f97316"
-                    strokeDasharray="6 4"
-                    label={{ value: `Low ${lowThreshold}`, position: "right", fill: "#f97316", fontSize: 11 }}
-                  />
-                )}
-                {hasHigh && (
-                  <ReferenceLine
-                    y={highThreshold}
-                    stroke="#dc2626"
-                    strokeDasharray="6 4"
-                    label={{ value: `High ${highThreshold}`, position: "right", fill: "#dc2626", fontSize: 11 }}
-                  />
-                )}
-                <Area
-                  type="monotone"
-                  dataKey={(row: any) => getEnvValues(row).temperature ?? 0}
-                  name="Temp (C)"
-                  stroke="#2563eb"
-                  fill="url(#temp)"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 3.5, fill: "#2563eb", stroke: "#ffffff", strokeWidth: 1.5 }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey={(row: any) => getEnvValues(row).humidity ?? 0}
-                  name="Humidity (%)"
-                  stroke="#0d9488"
-                  fill="url(#hum)"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 3.5, fill: "#0d9488", stroke: "#ffffff", strokeWidth: 1.5 }}
-                />
-              </AreaChart>
             </ResponsiveContainer>
           </div>
         )}
@@ -602,7 +647,6 @@ export default function DeviceDetailPage() {
             />
           </div>
         )}
-
       </motion.div>
     </div>
   );

@@ -5,11 +5,9 @@ import { motion } from "framer-motion";
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMotionPreset } from "../utils/motion";
-import { extractPressMetrics, getEnvValues } from "../utils/metrics";
 import { getWifiStrength } from "../utils/wifi";
-import { formatTwoDecimals } from "../utils/numberFormat";
 import WifiIcon from "../components/WifiIcon";
-import { StatusPill } from "../components/StatusPill";
+import TelemetryParameterList from "../components/TelemetryParameterList";
 
 const COLORS = ["#16A34A", "#F97316", "#0EA5E9", "#E2E8F0"];
 const HEARTBEAT_THRESHOLD_MS = 10_000;
@@ -118,8 +116,6 @@ export default function DashboardPage() {
           <div className="space-y-3 max-h-[360px] overflow-auto pr-1">
             {feedItems.map((item) => {
               const state = classify(item);
-              const presses = extractPressMetrics(item);
-              const env = getEnvValues(item);
               const wifi = state.online ? getWifiStrength(item) : undefined;
               return (
                 <motion.div
@@ -135,21 +131,7 @@ export default function DashboardPage() {
                       {!state.online && <span className="text-xs text-slate-500">Offline</span>}
                     </div>
                   </div>
-                  {presses.length ? (
-                    <div className="text-right text-sm min-w-[170px] leading-6 space-y-1">
-                      {presses.slice(0, 3).map((p) => (
-                        <div key={p.id} className="flex justify-end gap-2">
-                      <span className="text-slate-600 font-semibold">Phase {p.id}:</span>
-                          <span className="text-blue-700 font-semibold">{p.amps.toFixed(2)} A</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-right text-sm min-w-[120px] leading-6">
-                      <p className="text-blue-700 font-semibold">{formatTwoDecimals(env.temperature)}°C</p>
-                      <p className="text-teal-600 font-semibold">{formatTwoDecimals(env.humidity)}%</p>
-                    </div>
-                  )}
+                  <TelemetryParameterList item={item} align="right" className="min-w-[220px]" maxVisible={4} />
                 </motion.div>
               );
             })}

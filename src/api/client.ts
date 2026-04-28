@@ -4,7 +4,7 @@ import { getRssi, getWifiStrength } from "../utils/wifi";
 
 const DEFAULT_API_ENDPOINT = "https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod";
 const DEFAULT_FETCH_TIMEOUT_MS = 60_000;
-const FAST_STATUS_TIMEOUT_MS = 5_000;
+const FAST_STATUS_TIMEOUT_MS = 4_000;
 
 const resolveApiEndpoint = (raw?: string) => {
   const value = (raw ?? "").trim();
@@ -1027,15 +1027,10 @@ export async function getDashboard() {
 }
 
 export async function getRealtime() {
-  let data: DashboardResponse;
-  try {
-    data = await fetchDashboardData({
-      query: { statusOnly: "1" },
-      timeoutMs: FAST_STATUS_TIMEOUT_MS,
-    });
-  } catch {
-    data = await fetchDashboardData();
-  }
+  const data = await fetchDashboardData({
+    query: { statusOnly: "1" },
+    timeoutMs: FAST_STATUS_TIMEOUT_MS,
+  });
 
   const realtimeRaw = data.RealTimeDataMonitor ?? [];
   const historyRaw = data.IoTReadings ?? [];

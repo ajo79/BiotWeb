@@ -87,7 +87,7 @@ export default function HelpPage() {
       <div className="glass rounded-2xl p-5 border border-white/5 shadow-ambient space-y-3">
         <h2 className="text-xl font-semibold">Helpful tips</h2>
         <ul className="list-disc list-inside text-slate-200 space-y-2">
-          <li>Data refresh every 5s (Realtime Monitor). If empty, device may be offline.</li>
+          <li>Realtime Monitor refreshes every 5s. If empty, device may be offline.</li>
           <li>History queries use IoTReadings dataset; pick date range in Graph/Export.</li>
           <li>Factory login: CEAT / 1234 (demo).</li>
         </ul>
