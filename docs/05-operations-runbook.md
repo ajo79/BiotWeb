@@ -1,6 +1,6 @@
 # Operations Runbook
 
-Branch covered: `BiotWeb_NewUI`.
+Branch covered: `NewUI_withMeter`.
 
 ## 1. Daily Operational Checks
 
@@ -9,8 +9,10 @@ Branch covered: `BiotWeb_NewUI`.
 - Confirm visible realtime labels show `auto 5s` / `auto-refresh 5s`.
 - Confirm graph history for same-day and multi-day ranges.
 - Confirm alarm table receives records when alarms are active.
+- Confirm eligible active alarms expose ACK actions on the Devices page.
 - Confirm CSV export downloads valid rows for known range.
 - Confirm export/date filters align to fixed IST day boundaries (UTC+05:30).
+- Confirm site-scoped login only exposes devices for the expected site.
 
 ## 2. Health Signals
 
@@ -18,6 +20,7 @@ UI indicators:
 - Device status (online/alarm/offline).
 - Last seen timestamp on live pages.
 - Uptime chart and anomaly queue in analytics.
+- Site-branded meter KPI cards for the BlackStar Products energy site.
 
 Operational interpretation:
 - Repeated `stale/offline` bursts may indicate connectivity issues.
@@ -51,11 +54,19 @@ Issue: expected page missing in left menu
 - Notifications route is available at `/notifications` but is hidden from primary navigation by design.
 - Help/About remain visible in the navigation support section/drawer.
 
+Issue: no devices appear after login
+- Cause: fast realtime payload may be missing `siteId` or `deviceType`, or backend rows do not match the authenticated site policy.
+- Action: verify a full fetch succeeds and that returned rows contain matching `siteId` plus allowed `deviceType` values for the selected site.
+
+Issue: ACK button does not appear for an alarming device
+- Cause: ACK is shown only when the device is online, the current row indicates common alarm, and the alarm lifecycle builder still sees an open alarm row for that device.
+- Action: verify `ESP32_Alarms` includes an unclosed `alarmFlag=1` row for the device and no later matching clear row.
+
 Issue: GoDaddy deployment shows old UI after upload
 - Cause: old `index.html` or old `assets/` bundle is still being served, or browser/CDN cache is stale.
 - Action: delete old `public_html/index.html` and `public_html/assets/`, upload the new `dist` contents, then hard refresh.
 - Verify page source references the latest hashed JS/CSS files from the current `dist/index.html`.
-- If auto-deploy is enabled, verify it deploys branch `BiotWeb_NewUI`.
+- If auto-deploy is enabled, verify it deploys branch `NewUI_withMeter`.
 
 ## 4. Security and Compliance Notes
 
@@ -67,7 +78,8 @@ Risks:
 
 Production recommendation:
 - Replace with backend identity provider and token validation.
-- Remove hardcoded factory credential.
+- Remove hardcoded bootstrap credentials.
+- Move site access policy enforcement to backend APIs.
 
 ## 5. Backup and Recovery
 
@@ -78,6 +90,7 @@ Local data that can be backed up (browser data):
 - `biot_users_v1`
 - `biot_profile`
 - `biot_notifications`
+- Local user rows also include site metadata and should be considered site-scoped configuration.
 
 For managed environments, avoid relying on browser localStorage for critical identity data.
 
@@ -87,6 +100,7 @@ Before release:
 - run build.
 - run smoke checklist.
 - verify docs version/date updates.
+- verify current branch name references `NewUI_withMeter` where applicable.
 
 After release:
 - monitor telemetry loading and online-state stability.
@@ -98,3 +112,4 @@ After release:
 - Demo pages (notifications/help/profile) are local storage centric.
 - Large production bundles trigger chunk size warnings (not blocking).
 - GoDaddy static hosting requires manual cleanup of old hashed asset folders unless CI/CD handles it.
+- Site access control is client-enforced only; backend still needs independent authorization.

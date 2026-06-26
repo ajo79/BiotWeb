@@ -1,6 +1,6 @@
 # Setup, Build, and Deployment Guide
 
-Branch covered: `BiotWeb_NewUI`.
+Branch covered: `NewUI_withMeter`.
 
 ## 1. Prerequisites
 
@@ -90,7 +90,7 @@ Recommended upload flow:
 
 Do not extract into `public_html/dist`; the app expects `index.html` at the web root.
 
-If GoDaddy is connected to GitHub auto-deploy, confirm the deployment branch is `BiotWeb_NewUI` or merge this branch into the configured deployment branch.
+If GoDaddy is connected to GitHub auto-deploy, confirm the deployment branch is `NewUI_withMeter` or merge this branch into the configured deployment branch.
 
 ## 8. CI/CD Recommendation
 
@@ -106,8 +106,10 @@ Optional:
 ## 9. Release Checklist
 
 - Build succeeds with no blocking errors.
+- CEAT and BlackStar bootstrap logins are documented for the deployment target.
 - Realtime and history pages load telemetry.
 - Dashboard, Devices, and Graph display `5s` realtime refresh labels.
+- Energy meter pages render for `SITE-02` / `type_003` devices.
 - Same-day history range returns expected data.
 - CSV export works.
 - Date-only history/export filtering honors fixed IST boundaries (`UTC+05:30`).

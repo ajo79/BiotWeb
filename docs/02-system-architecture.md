@@ -1,6 +1,6 @@
 # System Architecture
 
-Branch covered: `BiotWeb_NewUI`.
+Branch covered: `NewUI_withMeter`.
 
 ## 1. Technology Stack
 
@@ -30,6 +30,7 @@ State and Data Layer
 Session/Auth Layer
 - Context provider in `src/auth/auth.tsx`.
 - localStorage persistence for auth and local users.
+- Session carries `siteKey`, `siteId`, and allowed device types.
 
 ## 3. Routing Model
 
@@ -59,6 +60,7 @@ Navigation behavior:
 - Mobile uses a slide-out drawer.
 - Primary navigation exposes Dashboard/Devices/Graph/Alarms/Export plus Help/About.
 - `/analytics`, `/settings`, and `/notifications` routes exist but are not exposed in primary desktop navigation.
+- Navigation header also reflects the active site branding and route availability is enforced by filtered data, not by separate route trees.
 
 ## 4. Data Flow
 
@@ -68,6 +70,7 @@ Navigation behavior:
 4. Response is normalized (Lambda body unwrap, Dynamo unmarshal, payload flatten).
 5. UI-ready objects returned to hooks.
 6. Page renders cards/charts/tables from normalized objects.
+7. `accessPolicy.ts` filters row visibility by authenticated site and allowed device types before page rendering.
 
 ## 5. Polling and Query Behavior
 
@@ -81,6 +84,7 @@ Hook-level behavior:
 - History query disables interval and focus/reconnect auto refresh.
 - Graph/DeviceDetail live mode polls, history mode disables polling.
 - Shell also keeps a 5 second realtime query active for status/history prefetch support.
+- Device detail and graph pages trigger an additional 60 second same-day history refresh while in live mode.
 
 ## 6. Device Health Classification
 
@@ -100,6 +104,15 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 - Realtime merge logic.
 - History pagination and filtering (`limit` support, multi-page cursor loop).
 - Online-state machine.
+- Alarm acknowledgement POST helper.
+
+`src/config/sites.ts`
+- Defines site bootstrap users, site IDs, allowed device types, and feature flags.
+- Current configured sites are `CEAT` (`SITE-01`) and `ACME_ENERGY` / BlackStar Products (`SITE-02`).
+
+`src/utils/accessPolicy.ts`
+- Central site access filter used by dashboard, devices, graph, analytics, export, and device-detail routing.
+- Rejects rows whose `siteId` or `deviceType` do not match the active site policy.
 
 `src/hooks/queries.ts`
 - Centralized query hooks and polling options.
@@ -123,18 +136,28 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 
 `src/pages/ExportPage.tsx`
 - Converts history rows to CSV client-side with fixed IST date boundaries and `Time (IST)` formatting.
+- Restricts device choices and exported rows to the active site policy.
 
 `src/utils/siteTime.ts`
 - Centralized fixed site timezone utilities (`UTC+05:30`) for date input boundaries and display formatting.
 
 `src/pages/MorePage.tsx`
-- Local user CRUD and role assignment.
+- Local user CRUD and role assignment scoped to the active site's user list.
 
 `src/pages/GraphPage.tsx` and `src/pages/DeviceDetailPage.tsx`
 - Combine live realtime rows with same-day history rows in live mode.
 - Derive numeric metric options from current data.
 - Render selected metrics as multi-line charts with min/max/avg summaries.
-- Enable threshold lines only for phase amperage metric selections.
+- Enable threshold lines only for phase amperage metric selections on non-energy pages.
+- Use oscilloscope-style zoom/pan time controls.
+- Render grouped energy presets and energy panels for meter-focused sites.
+
+`src/pages/DashboardPage.tsx` and `src/pages/DevicesPage.tsx`
+- Switch layout and component composition based on site feature flags.
+- Use `EnergyKpiCard` and `EnergyMetricGroupCard` for the energy-meter site variant.
+
+`src/hooks/useAlarmAcknowledge.ts`
+- Sends ACK requests, tracks per-device pending state, and invalidates alarm/dashboard/realtime queries on success.
 
 ## 8. Persistence Model
 
@@ -143,6 +166,7 @@ Browser localStorage keys:
 - `biot_users_v1`: local user accounts.
 - `biot_profile`: profile fields (optional).
 - `biot_notifications`: notification list (optional/demo page).
+- Auth payload now includes site fields used to rehydrate access policy on reload.
 
 No backend persistence is used for user management in current implementation.
 

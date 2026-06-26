@@ -1,11 +1,14 @@
 # Data Extraction and API Documentation
 
-Branch covered: `BiotWeb_NewUI`.
+Branch covered: `NewUI_withMeter`.
 
 ## 1. Endpoint
 
 Default endpoint:
 - `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
+
+Alarm acknowledgement endpoint:
+- `${VITE_API_URL or default}/alarms/ack`
 
 Override via env:
 - `VITE_API_URL`
@@ -30,6 +33,11 @@ IoT readings pagination/history:
   - `endTsEpochMs`, `endTs`, `toTs`
 - pagination aliases:
   - `cursor`, `nextToken`, `pageToken`, `continuationToken`
+
+Alarm acknowledgement POST payload:
+- `deviceId` required
+- `siteId` optional
+- `requestId` optional but supplied by the UI
 
 ## 3. Response Normalization Pipeline
 
@@ -68,6 +76,11 @@ Shift production metrics:
 - Resolved from decoded parameter labels/keys or aliases such as `shift_1_count`, `shift1_production`, and `shift_1_production_count`.
 - Displayed as a Shift 1/2/3 donut on `type_002` device cards.
 
+Energy meter metrics:
+- Extracted from the generic numeric parameter pipeline.
+- Grouped heuristically into energy, power, voltage, current, and quality presets/cards by `src/utils/energyMeter.ts`.
+- Used heavily for `type_003` meter devices on the BlackStar Products site.
+
 ## 5. Schema Validation
 
 `_schemaValid` is computed using BIOT telemetry heuristics:
@@ -85,6 +98,7 @@ Inputs:
 Merge behavior:
 - For each realtime device, fill missing fields from latest IoT reading for same device.
 - Include reading-only devices not present in realtime list.
+- If fast status payloads omit `siteId` or `deviceType`, the client falls back to full fetch so access-policy filtering does not empty the UI.
 
 ## 7. Robust Online/Offline Logic
 
@@ -125,6 +139,10 @@ Robust fallback:
 - This mitigates same-day range misses from backend filtering behavior.
 - Export page requests paginated history with `pageLimit=1000` and `maxPages=500`.
 
+Site access filter:
+- Pages apply client-side site filtering after normalization using row `siteId` and `deviceType`.
+- Direct device-detail access is rejected when the selected device is outside the filtered device ID set.
+
 ## 9. Export Data Pipeline
 
 `ExportPage` uses `getIoTReadingsHistory` and then:
@@ -135,7 +153,21 @@ Robust fallback:
 4. Formats numeric-like values to two decimals.
 5. Triggers browser CSV download.
 
-## 10. UI Metric Display Pipeline
+## 10. Alarm Lifecycle and ACK Flow
+
+Alarm row normalization:
+1. Alarm rows are sorted oldest-first when building lifecycle state.
+2. `alarmFlag=1` opens an alarm lifecycle row.
+3. `alarmFlag=0` closes the most recent open row for the same device.
+4. Final lifecycle rows are displayed latest-first.
+
+ACK flow:
+1. Devices page checks whether a device has an open alarm lifecycle row and a current common alarm state.
+2. Eligible devices show an `ACK` button.
+3. ACK posts `deviceId`, current session `siteId`, and a generated `requestId` to `/alarms/ack`.
+4. On success the UI invalidates alarms, dashboard, and realtime queries, then refetches active alarms.
+
+## 11. UI Metric Display Pipeline
 
 Dashboard and Devices use `TelemetryParameterList`:
 
@@ -151,7 +183,13 @@ Graph and Device Detail use numeric metric helpers:
 3. Render selected metrics as line series.
 4. Compute min/max/avg from visible chart points.
 
-## 11. API Error Handling
+Energy-specific charting:
+1. Build energy presets from available numeric metric IDs.
+2. Select default preset metrics for energy-site graph page.
+3. Split device-detail charts into separate energy panels by preset/group.
+4. Disable manual threshold overlays on energy grouped panels.
+
+## 12. API Error Handling
 
 - Invalid JSON response throws clear parse error.
 - Realtime fast status call auto-falls back to full fetch.

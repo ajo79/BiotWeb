@@ -2,7 +2,7 @@
 
 Use this checklist before release.
 
-Branch covered: `BiotWeb_NewUI`.
+Branch covered: `NewUI_withMeter`.
 
 ## 1. Build and App Boot
 
@@ -18,6 +18,8 @@ Branch covered: `BiotWeb_NewUI`.
 - Reload preserves session.
 - Sign out clears session and returns to login.
 - Factory credential works with `CEAT / 1234` (legacy `Company_A` still accepted).
+- Energy-site credential works with `BLACK_STAR / 1234`.
+- Session rehydrates the correct site and device visibility after reload.
 
 ## 3. Dashboard
 
@@ -27,6 +29,7 @@ Branch covered: `BiotWeb_NewUI`.
 - Decoded telemetry parameters render with show-more behavior when more than four values exist.
 - Pie chart renders when data exists.
 - Card navigation to `/devices` filters works.
+- For BlackStar Products site, dashboard shows grouped meter KPI cards and `Live Meter Feed`.
 
 ## 4. Devices Page
 
@@ -37,6 +40,8 @@ Branch covered: `BiotWeb_NewUI`.
 - Online cards show decoded telemetry parameters.
 - `type_002` devices show Shift Production donut when shift count values exist.
 - Clicking card opens `/devices/:id`.
+- BlackStar Products devices render grouped energy metric cards when energy metrics are present.
+- ACK button appears only for eligible open alarms and shows success/failure feedback.
 
 ## 5. Device Detail
 
@@ -47,6 +52,8 @@ Branch covered: `BiotWeb_NewUI`.
 - Selected metrics render as line series.
 - Threshold inputs draw reference lines when phase amperage metrics are selected.
 - Offline message appears when device not live.
+- Unauthorized direct device URL for another site redirects back to `/devices`.
+- Energy-site device detail splits charts into separate grouped energy panels.
 
 ## 6. Graph Page
 
@@ -57,16 +64,20 @@ Branch covered: `BiotWeb_NewUI`.
 - Metric selector can toggle visible numeric chart series.
 - Tooltip values are shown with two decimals.
 - Stats (min/max/avg) render correctly.
+- Energy-site graph page shows preset chips and grouped energy overview cards.
+- Zoom, pan slider, and mouse-wheel timeline zoom work in both graph flows.
 
 ## 7. Alarms
 
 - Alarm table loads rows from alarm dataset.
 - Timestamp and message fields appear correctly.
 - Empty state appears when no alarms.
+- Open and cleared alarm rows merge into expected lifecycle entries.
 
 ## 8. Export
 
 - Device list in export form is populated.
+- Device list in export form only contains devices visible to the active site.
 - Export with date range downloads CSV.
 - CSV includes expected headers and rows.
 - Numeric-like values are formatted with two decimals.
@@ -78,6 +89,7 @@ Branch covered: `BiotWeb_NewUI`.
 - Uptime chart renders with percentage values.
 - Signal indicators (wifi/rssi) display correctly.
 - Anomaly list renders or shows empty state.
+- Anomaly copy reflects environment metrics on CEAT and meter/offline focus on BlackStar Products.
 
 ## 10. User Management (Settings)
 
@@ -85,6 +97,7 @@ Branch covered: `BiotWeb_NewUI`.
 - Admin can edit role/password.
 - Admin can delete user.
 - Non-admin sees view-only restriction.
+- Admin can only view and manage users within the active site scope.
 
 ## 11. Responsive Navigation
 
