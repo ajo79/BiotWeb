@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../auth/auth";
 import { getDeviceHistory } from "../api/client";
 import { useRealtime } from "../hooks/queries";
+import { getSiteConfig } from "../config/sites";
+import { filterRowsForSession } from "../utils/accessPolicy";
 
 type IconProps = { className?: string };
 
@@ -144,6 +146,7 @@ const toLocalDayKey = (epochMs: number) => {
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const { logout, state } = useAuth();
+  const activeSite = getSiteConfig(state.siteKey);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const realtime = useRealtime({ enabled: true, refetchInterval: 5000 });
@@ -168,7 +171,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       prefetchedHistoryKeysRef.current.clear();
     }
 
-    const source = [...(realtime.data?.items ?? []), ...(realtime.data?.realtimeItems ?? [])];
+    const source = filterRowsForSession([...(realtime.data?.items ?? []), ...(realtime.data?.realtimeItems ?? [])], state);
     if (!source.length) return;
 
     const ids = new Set<string>();
@@ -250,6 +253,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     User ID: <span className="font-semibold text-slate-700">{state.userId}</span>
                   </div>
                 )}
+                <div className="text-xs text-slate-500 whitespace-nowrap">
+                  Site: <span className="font-semibold text-slate-700">{activeSite.displayName}</span>
+                </div>
                 <button
                   onClick={handleSignOut}
                   className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100"
@@ -304,7 +310,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </div>
               <button className="text-xl" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button>
             </div>
-            {state.userId && <div className="mt-2 text-xs text-slate-500">User ID: <span className="font-semibold text-slate-700">{state.userId}</span></div>}
+            {state.userId && (
+              <div className="mt-2 text-xs text-slate-500">
+                User ID: <span className="font-semibold text-slate-700">{state.userId}</span>
+                {" · "}
+                Site: <span className="font-semibold text-slate-700">{activeSite.displayName}</span>
+              </div>
+            )}
           </div>
           <div className="p-3 space-y-2">
             {nav.map((item) => (

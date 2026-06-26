@@ -1,8 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import { findBootstrapSiteByUserId, getSiteConfig, type SiteKey } from "../config/sites";
 
-const FACTORY_USER = "CEAT";
-const LEGACY_FACTORY_USER = "Company_A";
-const FACTORY_PASSWORD = "1234";
 const STORAGE_KEY = "biot_auth";
 const USERS_KEY = "biot_users_v1";
 
@@ -12,6 +10,8 @@ type StoredUser = {
   email: string;
   role?: string;
   password: string;
+  siteKey?: string;
+  siteId?: string;
 };
 
 const loadUsers = (): StoredUser[] => {
@@ -29,6 +29,9 @@ export type AuthState = {
   userId: string | null;
   token: string | null;
   role: "admin" | "user" | null;
+  siteKey: SiteKey | null;
+  siteId: string | null;
+  allowedDeviceTypes: string[];
 };
 
 const AuthContext = createContext<{
@@ -36,10 +39,22 @@ const AuthContext = createContext<{
   login: (userId: string, password: string) => Promise<void>;
   logout: () => void;
   hydrated: boolean;
-}>({ state: { userId: null, token: null, role: null }, login: async () => {}, logout: () => {}, hydrated: false });
+}>({
+  state: { userId: null, token: null, role: null, siteKey: null, siteId: null, allowedDeviceTypes: [] },
+  login: async () => {},
+  logout: () => {},
+  hydrated: false,
+});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AuthState>({ userId: null, token: null, role: null });
+  const [state, setState] = useState<AuthState>({
+    userId: null,
+    token: null,
+    role: null,
+    siteKey: null,
+    siteId: null,
+    allowedDeviceTypes: [],
+  });
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -48,12 +63,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed?.userId && parsed?.token) {
-          const normalizedUserId = parsed.userId === LEGACY_FACTORY_USER ? FACTORY_USER : parsed.userId;
-          const next = { role: null, ...parsed, userId: normalizedUserId };
+          const site = getSiteConfig(parsed.siteKey);
+          const next: AuthState = {
+            userId: parsed.userId,
+            token: parsed.token,
+            role: parsed.role === "admin" ? "admin" : parsed.role === "user" ? "user" : null,
+            siteKey: site.key as SiteKey,
+            siteId: site.siteId,
+            allowedDeviceTypes: site.allowedDeviceTypes,
+          };
           setState(next);
-          if (normalizedUserId !== parsed.userId) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-          }
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
         }
       }
     } catch {
@@ -65,9 +85,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (userId: string, password: string) => {
     if (!userId || !password) throw new Error("User ID and password are required.");
     const input = String(userId).trim();
-    const isFactoryUser = input === FACTORY_USER || input === LEGACY_FACTORY_USER;
-    if (isFactoryUser && password === FACTORY_PASSWORD) {
-      const next = { userId: FACTORY_USER, token: "factory-token", role: "admin" as const };
+
+    const bootstrapSite = findBootstrapSiteByUserId(input);
+    if (bootstrapSite && password === bootstrapSite.bootstrapUser.password) {
+      const next = {
+        userId: bootstrapSite.bootstrapUser.userId,
+        token: `bootstrap-${bootstrapSite.key.toLowerCase()}`,
+        role: "admin" as const,
+        siteKey: bootstrapSite.key as SiteKey,
+        siteId: bootstrapSite.siteId,
+        allowedDeviceTypes: bootstrapSite.allowedDeviceTypes,
+      };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       setState(next);
       return;
@@ -84,7 +112,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     if (matched && matched.password === password) {
       const role: "admin" | "user" = matched.role === "admin" ? "admin" : "user";
-      const next: AuthState = { userId: matched.email || matched.id, token: `local-${matched.id}`, role };
+      const site = getSiteConfig(matched.siteKey);
+      const next: AuthState = {
+        userId: matched.email || matched.id,
+        token: `local-${matched.id}`,
+        role,
+        siteKey: site.key as SiteKey,
+        siteId: site.siteId,
+        allowedDeviceTypes: site.allowedDeviceTypes,
+      };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       setState(next);
       return;
@@ -95,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     localStorage.removeItem(STORAGE_KEY);
-    setState({ userId: null, token: null, role: null });
+    setState({ userId: null, token: null, role: null, siteKey: null, siteId: null, allowedDeviceTypes: [] });
   };
 
   return <AuthContext.Provider value={{ state, login, logout, hydrated }}>{children}</AuthContext.Provider>;

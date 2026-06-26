@@ -3,10 +3,72 @@ import MetricCard from "../components/MetricCard";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import WifiIcon from "../components/WifiIcon";
 import { rssiLabel, rssiToBars, wifiLabel } from "../utils/wifi";
+import { useAuth } from "../auth/auth";
+import { getSiteConfig } from "../config/sites";
+import { useDashboard } from "../hooks/queries";
+import { buildAllowedDeviceIdSet } from "../utils/accessPolicy";
+
+function classify(item: any) {
+  const statusTag = String(item?._onlineStatus ?? "").trim().toLowerCase();
+  const onlineFromState =
+    statusTag === "online" || statusTag === "stale"
+      ? true
+      : statusTag === "offline"
+      ? false
+      : undefined;
+  const ts = Number(item?.ts);
+  const online = typeof onlineFromState === "boolean" ? onlineFromState : Number.isFinite(ts) ? Date.now() - ts <= 15_000 : true;
+  const keys = ["common issue", "common issues", "common alarm", "commonalarm", "common_issue"];
+  const lower: Record<string, any> = {};
+  Object.entries(item || {}).forEach(([k, v]) => {
+    lower[String(k).toLowerCase()] = v;
+  });
+  const commonIssue = keys.some((key) => {
+    if (!(key in lower)) return false;
+    const value = lower[key];
+    if (typeof value === "boolean") return value;
+    const n = Number(value);
+    if (Number.isFinite(n)) return n !== 0;
+    return Boolean(value);
+  });
+  return { online, category: !online || commonIssue ? "issue" : "good" };
+}
 
 export default function AnalyticsPage() {
   const { data, isLoading } = useAnalytics();
-  const uptimeChart = (data?.uptime ?? []).slice(0, 12).map((d: any) => ({ deviceId: d.deviceId, uptime: Math.round(d.uptime * 100) }));
+  const { state } = useAuth();
+  const activeSite = getSiteConfig(state.siteKey);
+  const dashboard = useDashboard();
+  const allowedDeviceIds = buildAllowedDeviceIdSet(
+    [...(dashboard.data?.IoTReadings ?? []), ...(dashboard.data?.RealTimeDataMonitor ?? [])],
+    state
+  );
+  const summarySource = (dashboard.data?.RealTimeDataMonitor?.length
+    ? dashboard.data.RealTimeDataMonitor
+    : dashboard.data?.IoTReadings ?? []
+  ).filter((row: any) => allowedDeviceIds.has(String(row?.deviceId ?? "").trim()));
+  const filteredSummary = summarySource.reduce(
+    (acc, row) => {
+      const result = classify(row);
+      acc.total += 1;
+      if (result.online) acc.online += 1;
+      if (result.category === "good") acc.good += 1;
+      else acc.issue += 1;
+      return acc;
+    },
+    { total: 0, online: 0, good: 0, issue: 0 }
+  );
+  const filteredUptime = (data?.uptime ?? []).filter((row: any) =>
+    allowedDeviceIds.has(String(row?.deviceId ?? "").trim())
+  );
+  const uptimeChart = filteredUptime.slice(0, 12).map((d: any) => ({ deviceId: d.deviceId, uptime: Math.round(d.uptime * 100) }));
+  const filteredAnomalies = (data?.anomalies ?? []).filter((row: any) =>
+    allowedDeviceIds.has(String(row?.deviceId ?? "").trim())
+  );
+  const filteredAlarmCount = Object.entries(data?.alarms ?? {}).reduce((sum, [deviceId, count]) => {
+    if (!allowedDeviceIds.has(String(deviceId).trim())) return sum;
+    return sum + Number(count || 0);
+  }, 0);
   const formatWindow = (ms?: number) => {
     const n = Number(ms);
     if (!Number.isFinite(n) || n <= 0) return "--";
@@ -22,10 +84,10 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="Devices" value={data?.totalDevices ?? "--"} sub="seen in history" />
-        <MetricCard title="Good vs Issue" value={`${data?.summary?.good ?? 0}/${data?.summary?.issue ?? 0}`} sub="current snapshot" accent="#0EA5E9" />
-        <MetricCard title="Open alarms" value={Object.values(data?.alarms ?? {}).reduce((a: any, b: any) => a + (b as number), 0) || 0} sub="total records" accent="#F97316" />
-        <MetricCard title="Anomalies" value={data?.anomalies?.length ?? 0} sub="temp/humidity/offline" accent="#F43F5E" />
+        <MetricCard title="Devices" value={filteredUptime.length || "--"} sub="seen in history" />
+        <MetricCard title="Good vs Issue" value={`${filteredSummary.good}/${filteredSummary.issue}`} sub="current snapshot" accent="#0EA5E9" />
+        <MetricCard title="Open alarms" value={filteredAlarmCount} sub="total records" accent="#F97316" />
+        <MetricCard title="Anomalies" value={filteredAnomalies.length ?? 0} sub={activeSite.features.showEnvironmentMetrics ? "temp/humidity/offline" : "meter/offline"} accent="#F43F5E" />
       </div>
 
       <div className="glass rounded-2xl p-5 border border-white/5 shadow-ambient">
@@ -62,7 +124,7 @@ export default function AnalyticsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.uptime ?? []).map((row: any) => {
+                  {filteredUptime.map((row: any) => {
                     const rssi = Number(row?.rssi);
                     const hasRssi = Number.isFinite(rssi);
                     const bars = hasRssi ? rssiToBars(rssi) : row?.wifiStrength;
@@ -101,14 +163,14 @@ export default function AnalyticsPage() {
           </div>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {(data?.anomalies ?? []).map((a: any, idx: number) => (
+          {filteredAnomalies.map((a: any, idx: number) => (
             <div key={idx} className="glass rounded-xl p-3 border border-white/5">
               <p className="text-sm font-semibold">{a.deviceId}</p>
               <p className="text-xs text-slate-400">Score {a.score}</p>
               <p className="text-xs text-slate-500">{a.ts ? new Date(a.ts).toLocaleString() : ""}</p>
             </div>
           ))}
-          {(!data?.anomalies || data.anomalies.length === 0) && <p className="text-slate-400 text-sm">No anomalies detected right now.</p>}
+          {(!filteredAnomalies || filteredAnomalies.length === 0) && <p className="text-slate-400 text-sm">No anomalies detected right now.</p>}
         </div>
       </div>
     </div>

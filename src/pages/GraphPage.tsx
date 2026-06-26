@@ -35,6 +35,17 @@ import {
   getSiteDateInputValue,
   shiftDateInputByDays,
 } from "../utils/siteTime";
+import { useAuth } from "../auth/auth";
+import { filterRowsForSession } from "../utils/accessPolicy";
+import { getSiteConfig } from "../config/sites";
+import EnergyMetricGroupCard from "../components/EnergyMetricGroupCard";
+import EnergyPresetPicker from "../components/EnergyPresetPicker";
+import {
+  buildEnergyMetricGroups,
+  buildEnergyPresetsFromMetricOptions,
+  getDefaultEnergyPresetMetricIds,
+  type EnergyPreset,
+} from "../utils/energyMeter";
 
 const HEARTBEAT_THRESHOLD_MS = 10_000;
 const POLLING_GRANULARITY_MS = 5_000;
@@ -140,11 +151,15 @@ const computeStats = (values: number[]): StatSummary => {
 };
 
 export default function GraphPage() {
+  const { state } = useAuth();
+  const activeSite = getSiteConfig(state.siteKey);
+  const isEnergySite = activeSite.key === "ACME_ENERGY";
   const [mode, setMode] = useState<"live" | "history">("live");
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [liveSeries, setLiveSeries] = useState<any[]>([]);
   const [liveHistoryAnchorTs, setLiveHistoryAnchorTs] = useState(() => Date.now());
   const [selectedMetricIds, setSelectedMetricIds] = useState<string[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<EnergyPreset["id"] | null>(null);
   const [thresholds, setThresholds] = useState<{ low: string; high: string }>({ low: "", high: "" });
   const [refreshAnimating, setRefreshAnimating] = useState(false);
   const scopePresetId = DEFAULT_SCOPE_PRESET_ID;
@@ -162,11 +177,11 @@ export default function GraphPage() {
     refetchInterval: mode === "live" ? 5000 : false,
   });
 
-  const liveItems = realtime.data?.realtimeItems ?? [];
+  const liveItems = useMemo(() => filterRowsForSession(realtime.data?.realtimeItems ?? [], state), [realtime.data?.realtimeItems, state]);
   const liveTick = realtime.dataUpdatedAt;
   const allDeviceOptions = useMemo(() => {
     const byId = new Map<string, { id: string; name: string; label: string }>();
-    const source = [...(realtime.data?.items ?? []), ...(realtime.data?.realtimeItems ?? [])];
+    const source = filterRowsForSession([...(realtime.data?.items ?? []), ...(realtime.data?.realtimeItems ?? [])], state);
     source.forEach((item) => {
       const id = item?.deviceId != null ? String(item.deviceId).trim() : "";
       if (!id) return;
@@ -178,7 +193,7 @@ export default function GraphPage() {
       }
     });
     return Array.from(byId.values()).sort((a, b) => a.id.localeCompare(b.id));
-  }, [realtime.data?.items, realtime.data?.realtimeItems]);
+  }, [realtime.data?.items, realtime.data?.realtimeItems, state]);
   const selectedId = selectedDevice || allDeviceOptions[0]?.id || "";
 
   useEffect(() => {
@@ -255,9 +270,7 @@ export default function GraphPage() {
   }, [mode, selectedId, liveHistory.refetch]);
 
   const historyData = useMemo(() => normalizePlotRows(history.data ?? []), [history.data]);
-
   const liveHistoryData = useMemo(() => normalizePlotRows(liveHistory.data ?? []), [liveHistory.data]);
-
   const liveData = useMemo(() => normalizePlotRows(liveSeries), [liveSeries]);
 
   const scopeWindowMs = resolveScopeWindowMs(scopePresetId);
@@ -338,6 +351,7 @@ export default function GraphPage() {
   );
 
   const metricOptions = useMemo(() => deriveMetricOptions(modeData), [modeData]);
+  const energyPresets = useMemo(() => buildEnergyPresetsFromMetricOptions(metricOptions), [metricOptions]);
 
   useEffect(() => {
     setSelectedMetricIds((prev) => {
@@ -345,9 +359,16 @@ export default function GraphPage() {
       const kept = prev.filter((id) => available.has(id));
       if (kept.length) return kept;
       if (!metricOptions.length) return [];
+      if (isEnergySite) {
+        const defaults = getDefaultEnergyPresetMetricIds(energyPresets);
+        if (defaults.length) {
+          setSelectedPresetId(energyPresets.find((preset) => preset.metricIds.length)?.id ?? null);
+          return defaults;
+        }
+      }
       return metricOptions.map((metric) => metric.id);
     });
-  }, [metricOptions]);
+  }, [metricOptions, isEnergySite, energyPresets]);
 
   const selectedMetrics = useMemo(
     () => metricOptions.filter((metric) => selectedMetricIds.includes(metric.id)),
@@ -367,17 +388,15 @@ export default function GraphPage() {
       ? formatHistoryTick(Number(value), visibleStartTs, visibleEndTs)
       : formatScopeTick(Number(value), tickFormatWindowMs);
   const currentTimeDiv = useMemo(
-    () =>
-      formatDurationShortWithSeconds(
-        timePerDivisionMs(Math.max(1, Number(visibleEndTs) - Number(visibleStartTs)))
-      ),
+    () => formatDurationShortWithSeconds(timePerDivisionMs(Math.max(1, Number(visibleEndTs) - Number(visibleStartTs)))),
     [visibleStartTs, visibleEndTs]
   );
 
-  const selected = realtime.data?.items?.find((d) => d.deviceId === selectedId);
+  const selected = filterRowsForSession(realtime.data?.items ?? [], state).find((d) => d.deviceId === selectedId);
   const status = selected ? classify(selected) : { online: true, commonIssue: false };
   const lastSeenTs = coerceEpochMs(selected?.ts);
   const lastSeen = Number.isFinite(lastSeenTs) ? new Date(lastSeenTs as number).toLocaleString() : "unknown";
+  const selectedGroups = useMemo(() => (selected ? buildEnergyMetricGroups(selected) : []), [selected]);
 
   const lowThreshold = Number(thresholds.low);
   const highThreshold = Number(thresholds.high);
@@ -435,6 +454,7 @@ export default function GraphPage() {
   };
 
   const toggleMetric = (metricId: string) => {
+    setSelectedPresetId(null);
     setSelectedMetricIds((prev) => {
       if (prev.includes(metricId)) {
         const next = prev.filter((id) => id !== metricId);
@@ -442,6 +462,11 @@ export default function GraphPage() {
       }
       return [...prev, metricId];
     });
+  };
+
+  const applyPreset = (preset: EnergyPreset) => {
+    setSelectedPresetId(preset.id);
+    setSelectedMetricIds(preset.metricIds);
   };
 
   const modeLabel =
@@ -453,6 +478,33 @@ export default function GraphPage() {
 
   return (
     <div className="space-y-4">
+      {isEnergySite && selected && (
+        <div className="rounded-[2rem] border border-slate-200 bg-[linear-gradient(135deg,_#ffffff,_#f8fafc)] p-5 shadow-ambient">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Energy Analysis</p>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-900">{selected.deviceName || selected.deviceId}</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Preset-driven charting for voltage, current, power factor, and consumption metrics.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+              Status: <span className={`font-semibold ${status.online ? "text-emerald-700" : "text-rose-700"}`}>{status.online ? "Online" : "Offline"}</span>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-5">
+            {selectedGroups.map((group) => (
+              <EnergyMetricGroupCard key={group.key} group={group} />
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <EnergyPresetPicker presets={energyPresets} activePresetId={selectedPresetId} onSelect={applyPreset} />
+          </div>
+        </div>
+      )}
+
       <div className="glass rounded-2xl p-4 border border-white/5 shadow-ambient flex flex-wrap gap-3 items-end">
         <div className="flex items-center gap-2 text-sm">
           {[{ key: "live", label: "Live" }, { key: "history", label: "History" }].map((chip) => (
@@ -576,7 +628,7 @@ export default function GraphPage() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-sm text-slate-400">{mode === "live" ? "Realtime" : "History"}</p>
-            <h2 className="text-xl font-semibold">Device Metrics</h2>
+            <h2 className="text-xl font-semibold">{isEnergySite ? "Energy Trends" : "Device Metrics"}</h2>
           </div>
           <div className="flex items-center gap-2">
             <button

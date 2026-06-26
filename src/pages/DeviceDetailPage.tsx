@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDeviceHistory, useRealtime } from "../hooks/queries";
 import { useTimeZoom } from "../hooks/useTimeZoom";
@@ -38,6 +38,14 @@ import {
   getSiteDateInputValue,
   shiftDateInputByDays,
 } from "../utils/siteTime";
+import { useAuth } from "../auth/auth";
+import { buildAllowedDeviceIdSet, filterRowsForSession, isAllowedDeviceId } from "../utils/accessPolicy";
+import { getSiteConfig } from "../config/sites";
+import EnergyMetricGroupCard from "../components/EnergyMetricGroupCard";
+import {
+  buildEnergyMetricGroups,
+  buildEnergyPresetsFromMetricOptions,
+} from "../utils/energyMeter";
 
 const HEARTBEAT_THRESHOLD_MS = 10_000;
 const POLLING_GRANULARITY_MS = 5_000;
@@ -115,6 +123,9 @@ const computeStats = (values: number[]): StatSummary => {
 
 export default function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { state } = useAuth();
+  const activeSite = getSiteConfig(state.siteKey);
+  const isEnergySite = activeSite.key === "ACME_ENERGY";
   const motionPreset = useMotionPreset();
   const [mode, setMode] = useState<"live" | "history">("live");
   const [liveSeries, setLiveSeries] = useState<any[]>([]);
@@ -137,6 +148,10 @@ export default function DeviceDetailPage() {
     refetchInterval: mode === "live" ? 5000 : false,
   });
   const liveTick = realtime.dataUpdatedAt;
+  const allowedDeviceIds = useMemo(
+    () => buildAllowedDeviceIdSet(realtime.data?.items ?? [], state),
+    [realtime.data?.items, state]
+  );
   const historyQuery = useDeviceHistory(
     mode === "history" ? id || "" : "",
     dateInputToSiteDayStartMs(appliedRange.start),
@@ -161,9 +176,9 @@ export default function DeviceDetailPage() {
   }, [mode, id, liveHistoryQuery.refetch]);
 
   const liveItem = useMemo(() => {
-    const items = realtime.data?.items ?? [];
+    const items = filterRowsForSession(realtime.data?.items ?? [], state);
     return items.find((item) => String(item.deviceId) === String(id));
-  }, [realtime.data?.items, id]);
+  }, [realtime.data?.items, id, state]);
 
   const liveStatusTag = String(liveItem?._onlineStatus ?? "").trim().toLowerCase();
   const liveOnlineFromState =
@@ -196,7 +211,7 @@ export default function DeviceDetailPage() {
 
   useEffect(() => {
     if (mode !== "live") return;
-    const items = realtime.data?.items ?? [];
+    const items = filterRowsForSession(realtime.data?.items ?? [], state);
     const match = items.find((item) => String(item.deviceId) === String(id));
     if (!match) return;
 
@@ -213,11 +228,12 @@ export default function DeviceDetailPage() {
       });
       return filtered.slice(-LIVE_MAX_POINTS);
     });
-  }, [realtime.data?.items, id, mode]);
+  }, [realtime.data?.items, id, mode, state]);
 
-  const historyData = useMemo(() => normalizePlotRows(historyQuery.data ?? []), [historyQuery.data]);
-  const liveHistoryData = useMemo(() => normalizePlotRows(liveHistoryQuery.data ?? []), [liveHistoryQuery.data]);
+  const historyData = useMemo(() => normalizePlotRows(filterRowsForSession(historyQuery.data ?? [], state)), [historyQuery.data, state]);
+  const liveHistoryData = useMemo(() => normalizePlotRows(filterRowsForSession(liveHistoryQuery.data ?? [], state)), [liveHistoryQuery.data, state]);
   const liveRealtimeData = useMemo(() => normalizePlotRows(liveSeries), [liveSeries]);
+  const isUnauthorizedDevice = Boolean(id && allowedDeviceIds.size > 0 && !isAllowedDeviceId(id, allowedDeviceIds));
 
   const seriesData = useMemo(() => {
     if (mode !== "live") return historyData;
@@ -298,13 +314,19 @@ export default function DeviceDetailPage() {
   );
 
   const metricOptions = useMemo(() => deriveMetricOptions(seriesData), [seriesData]);
+  const energyPresets = useMemo(() => buildEnergyPresetsFromMetricOptions(metricOptions), [metricOptions]);
 
   useEffect(() => {
     setSelectedMetricIds((prev) => {
       const available = new Set(metricOptions.map((metric) => metric.id));
-      const kept = prev.filter((id) => available.has(id));
+      const kept = prev.filter((metricId) => available.has(metricId));
       if (kept.length) return kept;
       if (!metricOptions.length) return [];
+
+      if (isEnergySite) {
+        const defaults = energyPresets.flatMap((preset) => preset.metricIds);
+        return defaults.length ? Array.from(new Set(defaults)) : metricOptions.map((metric) => metric.id);
+      }
 
       const defaults = metricOptions.filter((metric) => metric.isPhaseAmp).map((metric) => metric.id);
       const firstNonPhase = metricOptions.find((metric) => !metric.isPhaseAmp)?.id;
@@ -314,7 +336,7 @@ export default function DeviceDetailPage() {
       if (!defaults.length) defaults.push(metricOptions[0].id);
       return defaults;
     });
-  }, [metricOptions]);
+  }, [metricOptions, isEnergySite, energyPresets]);
 
   const selectedMetrics = useMemo(
     () => metricOptions.filter((metric) => selectedMetricIds.includes(metric.id)),
@@ -346,10 +368,11 @@ export default function DeviceDetailPage() {
   const thresholdEligible = selectedMetrics.length > 0 && selectedMetrics.every((metric) => metric.isPhaseAmp);
   const hasLow = thresholdEligible && Number.isFinite(lowThreshold);
   const hasHigh = thresholdEligible && Number.isFinite(highThreshold);
+  const overviewGroups = useMemo(() => (liveItem ? buildEnergyMetricGroups(liveItem) : []), [liveItem]);
 
   const statsByMetric = useMemo(() => {
     const out: Record<string, StatSummary> = {};
-    selectedMetrics.forEach((metric) => {
+    metricOptions.forEach((metric) => {
       const values = chartData.map((row) => {
         const value = getNumericMetricValue(row, metric.id);
         return value ?? NaN;
@@ -357,7 +380,20 @@ export default function DeviceDetailPage() {
       out[metric.id] = computeStats(values);
     });
     return out;
-  }, [chartData, selectedMetrics]);
+  }, [chartData, metricOptions]);
+
+  const energyChartPanels = useMemo(
+    () =>
+      energyPresets
+        .map((preset) => ({
+          id: preset.id,
+          title: preset.title,
+          description: preset.description,
+          metrics: metricOptions.filter((metric) => preset.metricIds.includes(metric.id)),
+        }))
+        .filter((panel) => panel.metrics.length),
+    [energyPresets, metricOptions]
+  );
 
   const toggleMetric = (metricId: string) => {
     setSelectedMetricIds((prev) => {
@@ -370,14 +406,111 @@ export default function DeviceDetailPage() {
   };
 
   const modeLabel =
-    chartData.length === 0
+    isEnergySite
+      ? energyChartPanels.length
+        ? `${energyChartPanels.length} separate graph panels`
+        : "Energy chart panels"
+      : chartData.length === 0
       ? "Device Metrics"
       : selectedMetrics.length
       ? `${selectedMetrics.length} selected`
       : "No metrics selected";
 
+  const renderMetricsChart = (metricsToRender: ChartMetricOption[], chartKey: string, allowThresholds: boolean) => {
+    const showLow = allowThresholds && metricsToRender.length > 0 && metricsToRender.every((metric) => metric.isPhaseAmp) && Number.isFinite(lowThreshold);
+    const showHigh = allowThresholds && metricsToRender.length > 0 && metricsToRender.every((metric) => metric.isPhaseAmp) && Number.isFinite(highThreshold);
+
+    return (
+      <ResponsiveContainer key={chartKey}>
+        <LineChart data={chartData} margin={chartMargin}>
+          <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" />
+          <XAxis
+            type="number"
+            dataKey="plotTs"
+            domain={[visibleStartTs, visibleEndTs]}
+            ticks={axisTicks}
+            tickFormatter={(value) => formatXAxisTick(Number(value))}
+            stroke="#94a3b8"
+            minTickGap={mode === "history" ? 48 : 20}
+            tick={{ fontSize: 12 }}
+          />
+          <YAxis stroke="#94a3b8" width={52} tick={{ fontSize: 12 }} />
+          <Tooltip
+            contentStyle={{ background: "#ffffff", border: "1px solid #e5e7eb" }}
+            labelStyle={{ color: "#0f172a" }}
+            labelFormatter={(value) => {
+              const ts = Number(value);
+              return Number.isFinite(ts) ? formatFullDateTimeTick(ts) : String(value ?? "");
+            }}
+            formatter={(value: any) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : value)}
+          />
+          <Legend verticalAlign="top" height={30} />
+          {showLow && (
+            <ReferenceLine
+              y={lowThreshold}
+              stroke="#f97316"
+              strokeDasharray="6 4"
+              label={{ value: `Low ${lowThreshold}`, position: "right", fill: "#f97316", fontSize: 11 }}
+            />
+          )}
+          {showHigh && (
+            <ReferenceLine
+              y={highThreshold}
+              stroke="#dc2626"
+              strokeDasharray="6 4"
+              label={{ value: `High ${highThreshold}`, position: "right", fill: "#dc2626", fontSize: 11 }}
+            />
+          )}
+          {metricsToRender.map((metric, idx) => (
+            <Line
+              key={metric.id}
+              type="monotone"
+              dataKey={(row: any) => {
+                const value = getNumericMetricValue(row, metric.id);
+                return value ?? null;
+              }}
+              name={metric.label}
+              stroke={LINE_COLORS[idx % LINE_COLORS.length]}
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 3.5, fill: LINE_COLORS[idx % LINE_COLORS.length], stroke: "#ffffff", strokeWidth: 1.5 }}
+              connectNulls
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    );
+  };
+
+  if (isUnauthorizedDevice) {
+    return <Navigate to="/devices" replace />;
+  }
+
   return (
     <div className="space-y-4">
+      {isEnergySite && liveItem && (
+        <div className="rounded-[2rem] border border-slate-200 bg-[linear-gradient(135deg,_#ffffff,_#f8fafc)] p-5 shadow-ambient">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Meter Overview</p>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-900">{liveItem.deviceName || liveItem.deviceId}</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Live and history charts split into separate meter sections for each parameter group.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+              Status: <span className={`font-semibold ${isLiveOnline ? "text-emerald-700" : "text-rose-700"}`}>{isLiveOnline ? "Online" : "Offline"}</span>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-5">
+            {overviewGroups.map((group) => (
+              <EnergyMetricGroupCard key={group.key} group={group} />
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="glass rounded-xl px-4 py-3 border border-white/5">
           <p className="text-xs text-slate-400">Device</p>
@@ -435,32 +568,34 @@ export default function DeviceDetailPage() {
           </button>
         </div>
 
-        <div className="flex-1 min-w-[220px]">
-          <p className="text-xs text-slate-400">Metrics</p>
-          {metricOptions.length ? (
-            <div className="mt-1 flex max-h-24 flex-wrap gap-2 overflow-auto pr-1">
-              {metricOptions.map((metric) => (
-                <button
-                  key={metric.id}
-                  type="button"
-                  onClick={() => toggleMetric(metric.id)}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-                    metricSet.has(metric.id)
-                      ? "border-blue-300 bg-blue-600 text-white"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                  title={metric.label}
-                >
-                  {metric.label}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-1 text-xs text-slate-500">No numeric parameters in current data.</p>
-          )}
-        </div>
+        {!isEnergySite && (
+          <div className="flex-1 min-w-[220px]">
+            <p className="text-xs text-slate-400">Metrics</p>
+            {metricOptions.length ? (
+              <div className="mt-1 flex max-h-24 flex-wrap gap-2 overflow-auto pr-1">
+                {metricOptions.map((metric) => (
+                  <button
+                    key={metric.id}
+                    type="button"
+                    onClick={() => toggleMetric(metric.id)}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+                      metricSet.has(metric.id)
+                        ? "border-blue-300 bg-blue-600 text-white"
+                        : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                    title={metric.label}
+                  >
+                    {metric.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-slate-500">No numeric parameters in current data.</p>
+            )}
+          </div>
+        )}
 
-        {thresholdEligible && (
+        {!isEnergySite && thresholdEligible && (
           <div className="flex items-center gap-2 text-sm">
             <label className="flex flex-col">
               Low threshold (A)
@@ -488,7 +623,7 @@ export default function DeviceDetailPage() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-sm text-slate-400">{mode === "live" ? "Live" : "History"}</p>
-            <h2 className="text-xl font-semibold">Device Metrics</h2>
+            <h2 className="text-xl font-semibold">{isEnergySite ? "Energy Metrics" : "Device Metrics"}</h2>
             <p className="mt-1 text-xs text-slate-600">
               Mode: <span className="font-semibold text-slate-900">{modeLabel}</span>
               <span className="ml-2">
@@ -539,16 +674,18 @@ export default function DeviceDetailPage() {
           </div>
         )}
 
-        <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-600">
-          {selectedMetrics.map((metric) => (
-            <div key={metric.id} className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-              <span className="font-semibold text-slate-800">{metric.label}</span>{" "}
-              <span>
-                min {statsByMetric[metric.id]?.min ?? "--"} / max {statsByMetric[metric.id]?.max ?? "--"} / avg {statsByMetric[metric.id]?.avg ?? "--"}
-              </span>
-            </div>
-          ))}
-        </div>
+        {!isEnergySite && (
+          <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-600">
+            {selectedMetrics.map((metric) => (
+              <div key={metric.id} className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+                <span className="font-semibold text-slate-800">{metric.label}</span>{" "}
+                <span>
+                  min {statsByMetric[metric.id]?.min ?? "--"} / max {statsByMetric[metric.id]?.max ?? "--"} / avg {statsByMetric[metric.id]?.avg ?? "--"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {chartData.length === 0 ? (
           <p className="text-sm text-slate-400">
@@ -558,6 +695,44 @@ export default function DeviceDetailPage() {
                 : "Waiting for live data..."
               : "No data for selected window."}
           </p>
+        ) : isEnergySite ? (
+          energyChartPanels.length ? (
+            <div
+              className="grid gap-4 cursor-zoom-in"
+              ref={setWheelElement}
+              title="Use mouse wheel to zoom the time axis"
+            >
+              {energyChartPanels.map((panel) => (
+                <section key={panel.id} className="rounded-[1.5rem] border border-slate-200 bg-white/90 p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Separate Graph</p>
+                      <h3 className="mt-1 text-lg font-semibold text-slate-900">{panel.title}</h3>
+                      <p className="mt-1 text-xs text-slate-500">{panel.description}</p>
+                    </div>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-600">
+                      {panel.metrics.length} metrics
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                    {panel.metrics.map((metric) => (
+                      <div key={metric.id} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
+                        <span className="font-semibold text-slate-800">{metric.label}</span>{" "}
+                        <span>
+                          min {statsByMetric[metric.id]?.min ?? "--"} / max {statsByMetric[metric.id]?.max ?? "--"} / avg {statsByMetric[metric.id]?.avg ?? "--"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 h-[19rem]">{renderMetricsChart(panel.metrics, panel.id, false)}</div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">No energy graph groups could be resolved from this meter's parameters.</p>
+          )
         ) : !selectedMetrics.length ? (
           <p className="text-sm text-slate-500">Select at least one metric to render the chart.</p>
         ) : (
@@ -566,66 +741,7 @@ export default function DeviceDetailPage() {
             ref={setWheelElement}
             title="Use mouse wheel to zoom the time axis"
           >
-            <ResponsiveContainer>
-              <LineChart data={chartData} margin={chartMargin}>
-                <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" />
-                <XAxis
-                  type="number"
-                  dataKey="plotTs"
-                  domain={[visibleStartTs, visibleEndTs]}
-                  ticks={axisTicks}
-                  tickFormatter={(value) => formatXAxisTick(Number(value))}
-                  stroke="#94a3b8"
-                  minTickGap={mode === "history" ? 48 : 20}
-                  tick={{ fontSize: 12 }}
-                />
-                <YAxis stroke="#94a3b8" width={52} tick={{ fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{ background: "#ffffff", border: "1px solid #e5e7eb" }}
-                  labelStyle={{ color: "#0f172a" }}
-                  labelFormatter={(value) => {
-                    const ts = Number(value);
-                    return Number.isFinite(ts) ? formatFullDateTimeTick(ts) : String(value ?? "");
-                  }}
-                  formatter={(value: any) =>
-                    Number.isFinite(Number(value)) ? Number(value).toFixed(2) : value
-                  }
-                />
-                <Legend verticalAlign="top" height={30} />
-                {hasLow && (
-                  <ReferenceLine
-                    y={lowThreshold}
-                    stroke="#f97316"
-                    strokeDasharray="6 4"
-                    label={{ value: `Low ${lowThreshold}`, position: "right", fill: "#f97316", fontSize: 11 }}
-                  />
-                )}
-                {hasHigh && (
-                  <ReferenceLine
-                    y={highThreshold}
-                    stroke="#dc2626"
-                    strokeDasharray="6 4"
-                    label={{ value: `High ${highThreshold}`, position: "right", fill: "#dc2626", fontSize: 11 }}
-                  />
-                )}
-                {selectedMetrics.map((metric, idx) => (
-                  <Line
-                    key={metric.id}
-                    type="monotone"
-                    dataKey={(row: any) => {
-                      const value = getNumericMetricValue(row, metric.id);
-                      return value ?? null;
-                    }}
-                    name={metric.label}
-                    stroke={LINE_COLORS[idx % LINE_COLORS.length]}
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 3.5, fill: LINE_COLORS[idx % LINE_COLORS.length], stroke: "#ffffff", strokeWidth: 1.5 }}
-                    connectNulls
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
+            {renderMetricsChart(selectedMetrics, "generic-device-chart", true)}
           </div>
         )}
 

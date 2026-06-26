@@ -2,7 +2,9 @@ import axios from "axios";
 import { flattenPayloadDeep } from "../utils/metrics";
 import { getRssi, getWifiStrength } from "../utils/wifi";
 
-const DEFAULT_API_ENDPOINT = "https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod";
+const DEFAULT_API_ENDPOINT = import.meta.env.DEV
+  ? "/prod"
+  : "https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod";
 const DEFAULT_FETCH_TIMEOUT_MS = 60_000;
 const FAST_STATUS_TIMEOUT_MS = 4_000;
 
@@ -21,10 +23,47 @@ const resolveApiEndpoint = (raw?: string) => {
 };
 
 const API_ENDPOINT = resolveApiEndpoint(import.meta.env.VITE_API_URL as string | undefined);
+const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined)?.trim();
+
+const buildRequestHeaders = (extra: Record<string, string> = {}) => ({
+  "Content-Type": "application/json",
+  ...(API_KEY ? { "x-api-key": API_KEY } : {}),
+  ...extra,
+});
+
+const resolveAlarmAckEndpoint = (raw: string | undefined, apiEndpoint: string) => {
+  const value = (raw ?? "").trim();
+  if (value) {
+    try {
+      return new URL(value, typeof window !== "undefined" ? window.location.origin : "http://localhost").toString();
+    } catch {
+      // Fall through to derived endpoint.
+    }
+  }
+
+  try {
+    const url = new URL(apiEndpoint, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    const path = url.pathname.replace(/\/+$/, "");
+    url.pathname = `${path}/alarms/ack`;
+    url.search = "";
+    return url.toString();
+  } catch {
+    return `${DEFAULT_API_ENDPOINT}/alarms/ack`;
+  }
+};
+
+const ALARM_ACK_ENDPOINT = resolveAlarmAckEndpoint(
+  import.meta.env.VITE_ALARM_ACK_URL as string | undefined,
+  API_ENDPOINT
+);
 
 export type Reading = {
   deviceId: string;
   deviceName?: string;
+  siteId?: string;
+  deviceType?: string;
+  msgType?: string;
+  schemaVersion?: number | string;
   temperature?: number;
   humidity?: number;
   ts?: number;
@@ -47,6 +86,13 @@ export type DashboardResponse = {
   ESP32_Alarms: any[];
   summary: { total: number; online: number; good: number; issue: number };
   _meta?: IoTPaginationMeta;
+};
+
+export type AlarmAckResponse = {
+  accepted: boolean;
+  deviceId: string;
+  requestId?: string;
+  [key: string]: any;
 };
 
 type FetchDashboardOptions = {
@@ -288,6 +334,8 @@ const applyCanonicalCompatFields = (merged: any, parameters: any[]) => {
 const normalizeReading = (entry: any): Reading => {
   if (!entry || typeof entry !== "object") return entry;
 
+  const rawServerTs = pickEpochMs(entry?.ts, entry?.timestamp, entry?.time);
+  const rawDeviceTs = pickEpochMs(entry?.tsDeviceMs, entry?.tsEpochMs, entry?.ts_epoch_ms);
   const merged = flattenPayloadDeep(entry);
   const parameters = normalizeParameters(merged.parameters);
   const compat = applyCanonicalCompatFields(merged, parameters);
@@ -317,8 +365,19 @@ const normalizeReading = (entry: any): Reading => {
     return undefined;
   };
 
-  const tsServerMs = pickEpochMs(lookup.ts, lookup.timestamp, lookup.time);
-  const tsDeviceMs = pickEpochMs(lookup.tsEpochMs, lookup.ts_epoch_ms);
+  const tsServerMs = pickEpochMs(
+    lookup.tsServerMs,
+    rawServerTs,
+    lookup.ts,
+    lookup.time,
+    lookup.timestamp
+  );
+  const tsDeviceMs = pickEpochMs(
+    lookup.tsDeviceMs,
+    rawDeviceTs,
+    lookup.tsEpochMs,
+    lookup.ts_epoch_ms
+  );
 
   return {
     ...merged,
@@ -379,7 +438,7 @@ const toQueryValue = (value: any) => {
 };
 
 const buildApiUrl = (query?: Record<string, any>) => {
-  const url = new URL(API_ENDPOINT);
+  const url = new URL(API_ENDPOINT, typeof window !== "undefined" ? window.location.origin : "http://localhost");
   Object.entries(query ?? {}).forEach(([key, raw]) => {
     const value = toQueryValue(raw);
     if (value !== undefined) url.searchParams.append(String(key), value);
@@ -393,7 +452,7 @@ async function fetchText(url: string, options: { timeoutMs?: number } = {}) {
     timeout: timeoutMs,
     responseType: "text",
     transformResponse: [(data) => data],
-    headers: { "Content-Type": "application/json" },
+    headers: buildRequestHeaders(),
   });
 
   if (typeof res.data === "string") return res.data;
@@ -1026,12 +1085,7 @@ export async function getDashboard() {
   return fetchDashboardData();
 }
 
-export async function getRealtime() {
-  const data = await fetchDashboardData({
-    query: { statusOnly: "1" },
-    timeoutMs: FAST_STATUS_TIMEOUT_MS,
-  });
-
+function buildRealtimeResult(data: DashboardResponse) {
   const realtimeRaw = data.RealTimeDataMonitor ?? [];
   const historyRaw = data.IoTReadings ?? [];
   const { mergedRealtime, readingOnly } = mergeRealtimeAndReadings(realtimeRaw, historyRaw);
@@ -1048,6 +1102,37 @@ export async function getRealtime() {
   return { items, realtimeItems: annotatedRealtimeItems, summary };
 }
 
+function needsRealtimeFallback(result: ReturnType<typeof buildRealtimeResult>) {
+  if (!result.items.length) return true;
+
+  // Fast status payloads can omit site/device metadata. When that happens the
+  // page-level access filter removes every row, so fall back to the full
+  // dashboard payload which carries the needed fields.
+  return !result.items.some((item) => {
+    const siteId = String(item?.siteId ?? "").trim();
+    const deviceType = String(item?.deviceType ?? "").trim();
+    return Boolean(siteId && deviceType);
+  });
+}
+
+export async function getRealtime() {
+  try {
+    const fastData = await fetchDashboardData({
+      query: { statusOnly: "1" },
+      timeoutMs: FAST_STATUS_TIMEOUT_MS,
+    });
+    const fastResult = buildRealtimeResult(fastData);
+    if (!needsRealtimeFallback(fastResult)) {
+      return fastResult;
+    }
+  } catch {
+    // Fall through to the full dashboard fetch.
+  }
+
+  const fullData = await fetchDashboardData();
+  return buildRealtimeResult(fullData);
+}
+
 export async function getAlarms() {
   const data = await fetchDashboardData();
   return [...(data.ESP32_Alarms ?? [])].sort((a, b) => {
@@ -1061,6 +1146,41 @@ export async function getAlarms() {
     if (bHasTs) return 1;
     return 0;
   });
+}
+
+export async function acknowledgeAlarm({
+  deviceId,
+  siteId,
+  requestId,
+}: {
+  deviceId: string;
+  siteId?: string | null;
+  requestId?: string;
+}): Promise<AlarmAckResponse> {
+  const normalizedDeviceId = String(deviceId ?? "").trim();
+  if (!normalizedDeviceId) {
+    throw new Error("deviceId is required");
+  }
+
+  const payload: Record<string, any> = { deviceId: normalizedDeviceId };
+  if (siteId != null && String(siteId).trim()) payload.siteId = String(siteId).trim();
+  if (requestId != null && String(requestId).trim()) payload.requestId = String(requestId).trim();
+
+  const res = await axios.post(ALARM_ACK_ENDPOINT, payload, {
+    timeout: DEFAULT_FETCH_TIMEOUT_MS,
+    headers: buildRequestHeaders(),
+    transformResponse: [(data) => data],
+  });
+
+  const parsed = safeJsonParse(res.data);
+  const body = parsed && typeof parsed === "object" ? parsed : {};
+
+  return {
+    accepted: body.accepted !== false,
+    deviceId: String(body.deviceId ?? normalizedDeviceId),
+    requestId: body.requestId != null ? String(body.requestId) : payload.requestId,
+    ...body,
+  };
 }
 
 export async function getIoTReadingsHistory({

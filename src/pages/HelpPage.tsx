@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { getAllSiteConfigs } from "../config/sites";
 
 export default function HelpPage() {
   const [form, setForm] = useState({ name: "", phone: "", email: "", requirement: "" });
   const [message, setMessage] = useState("");
+  const bootstrapSites = getAllSiteConfigs();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,10 +91,13 @@ export default function HelpPage() {
         <ul className="list-disc list-inside text-slate-200 space-y-2">
           <li>Realtime Monitor refreshes every 5s. If empty, device may be offline.</li>
           <li>History queries use IoTReadings dataset; pick date range in Graph/Export.</li>
-          <li>Factory login: CEAT / 1234 (demo).</li>
+          {bootstrapSites.map((site) => (
+            <li key={site.key}>
+              Demo login: {site.bootstrapUser.userId} / {site.bootstrapUser.password}
+            </li>
+          ))}
         </ul>
       </div>
     </div>
   );
 }
-

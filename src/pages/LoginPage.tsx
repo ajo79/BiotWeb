@@ -44,9 +44,7 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
-        <p className="text-xs text-slate-500 mt-4">Factory login: CEAT / 1234</p>
       </motion.div>
     </div>
   );
 }
-

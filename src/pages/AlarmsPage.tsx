@@ -1,13 +1,22 @@
+import { useMemo } from "react";
 import { useAlarms } from "../hooks/queries";
+import { mergeAlarmRows } from "../utils/alarmRows";
 
 export default function AlarmsPage() {
   const { data, isLoading } = useAlarms();
+
+  const rows = useMemo(() => {
+    return mergeAlarmRows(data ?? []).sort((a, b) => {
+      const aTs = Number(a.activeTs ?? 0);
+      const bTs = Number(b.activeTs ?? 0);
+      return bTs - aTs;
+    });
+  }, [data]);
 
   return (
     <div className="glass rounded-2xl p-5 border border-white/5 shadow-ambient overflow-hidden">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <p className="text-sm text-slate-400">ESP32 alarms</p>
           <h2 className="text-xl font-semibold">Alarm Console</h2>
         </div>
         {isLoading && <span className="text-xs text-slate-400">Refreshing…</span>}
@@ -18,36 +27,44 @@ export default function AlarmsPage() {
             <tr>
               <th className="px-3 py-2 text-left">#</th>
               <th className="px-3 py-2 text-left">Device</th>
-              <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Message</th>
-              <th className="px-3 py-2 text-left">Time</th>
+              <th className="px-3 py-2 text-left">Active date/time</th>
+              <th className="px-3 py-2 text-left">Cleared date/time</th>
             </tr>
           </thead>
           <tbody>
-            {(data ?? []).map((row, idx) => {
-              const ts = Number(row?.ts);
-              const alarmFlag = Number(row?.alarmFlag);
-              const statusLabel = alarmFlag === 0 ? "Cleared" : alarmFlag === 1 ? "Active" : "--";
-              const statusTone =
-                alarmFlag === 0
-                  ? "text-emerald-300"
-                  : alarmFlag === 1
-                    ? "text-amber-300"
-                    : "text-slate-400";
-              const message = row?.message || "Alarm";
+            {rows.map((row, index) => {
+              const deviceId = String(row?.deviceId ?? "").trim();
+              const deviceName = String(row?.deviceName ?? "").trim();
+              const message = String(row?.message ?? "").trim() || "Alarm";
+              const activeTs = Number(row?.activeTs);
+              const clearedTs = Number(row?.clearedTs);
+              const activeTimeText = String(row?.activeTimeText ?? "").trim();
+              const clearedTimeText = String(row?.clearedTimeText ?? "").trim();
+
               return (
-                <tr key={idx} className="border-t border-white/5 hover:bg-white/5">
-                  <td className="px-3 py-2 text-slate-300">{idx + 1}</td>
-                  <td className="px-3 py-2 font-semibold">{row.deviceId}</td>
-                  <td className={`px-3 py-2 font-medium ${statusTone}`}>{statusLabel}</td>
+                <tr
+                  key={`${deviceId}-${Number(row?.activeTs) || 0}-${Number(row?.clearedTs) || 0}-${index}`}
+                  className="border-t border-white/5 hover:bg-white/5"
+                >
+                  <td className="px-3 py-2 text-slate-300">{index + 1}</td>
+                  <td className="px-3 py-2 font-semibold">
+                    <span>{deviceName || deviceId || "--"}</span>
+                    {deviceName && deviceId ? <span className="ml-2 font-normal text-slate-400">{deviceId}</span> : null}
+                  </td>
                   <td className="px-3 py-2 text-slate-200">{message}</td>
-                  <td className="px-3 py-2 text-slate-400">{Number.isFinite(ts) ? new Date(ts).toLocaleString() : "--"}</td>
+                  <td className="px-3 py-2 text-slate-400">
+                    {activeTimeText || (Number.isFinite(activeTs) ? new Date(activeTs).toLocaleString() : "--")}
+                  </td>
+                  <td className="px-3 py-2 text-slate-400">
+                    {clearedTimeText || (Number.isFinite(clearedTs) ? new Date(clearedTs).toLocaleString() : "--")}
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        {!isLoading && (data ?? []).length === 0 && <p className="text-slate-400 text-sm">No alarms yet.</p>}
+        {!isLoading && rows.length === 0 && <p className="text-slate-400 text-sm">No alarms yet.</p>}
       </div>
     </div>
   );

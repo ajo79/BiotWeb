@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
 import { getIoTReadingsHistory } from "../api/client";
+import { useAuth } from "../auth/auth";
+import { getSiteConfig } from "../config/sites";
 import { useDashboard } from "../hooks/queries";
 import { formatNumericLikeCell } from "../utils/numberFormat";
+import { buildAllowedDeviceIdSet, filterRowsForSession, isAllowedDeviceForSite, isAllowedDeviceId } from "../utils/accessPolicy";
 import {
   dateInputToSiteDayEndMs,
   dateInputToSiteDayStartMs,
@@ -178,7 +181,9 @@ const resolveEnvValue = (row: any, params: ExportParam[], kind: "temperature" | 
 };
 
 export default function ExportPage() {
+  const { state } = useAuth();
   const dashboard = useDashboard();
+  const activeSite = getSiteConfig(state.siteKey);
   const [form, setForm] = useState(() => {
     const end = getSiteDateInputValue();
     const start = shiftDateInputByDays(end, -7);
@@ -186,10 +191,10 @@ export default function ExportPage() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const deviceOptions = useMemo(() => {
-    const all = [
+    const all = filterRowsForSession([
       ...(dashboard.data?.IoTReadings ?? []),
       ...(dashboard.data?.RealTimeDataMonitor ?? []),
-    ];
+    ], state);
     const byId = new Map<string, { id: string; name: string; label: string }>();
 
     all.forEach((row) => {
@@ -205,7 +210,15 @@ export default function ExportPage() {
     });
 
     return Array.from(byId.values()).sort((a, b) => a.id.localeCompare(b.id));
-  }, [dashboard.data?.IoTReadings, dashboard.data?.RealTimeDataMonitor]);
+  }, [dashboard.data?.IoTReadings, dashboard.data?.RealTimeDataMonitor, state]);
+  const allowedDeviceIds = useMemo(
+    () =>
+      buildAllowedDeviceIdSet(
+        [...(dashboard.data?.IoTReadings ?? []), ...(dashboard.data?.RealTimeDataMonitor ?? [])],
+        state
+      ),
+    [dashboard.data?.IoTReadings, dashboard.data?.RealTimeDataMonitor, state]
+  );
 
   const toCell = (value: any) => {
     if (value == null) return "";
@@ -240,6 +253,7 @@ export default function ExportPage() {
           const ts = toEpochMs(row?.ts);
           if (!Number.isFinite(ts)) return false;
           const did = row.deviceId != null ? String(row.deviceId) : "";
+          if (!isAllowedDeviceForSite(row, activeSite) && !isAllowedDeviceId(did, allowedDeviceIds)) return false;
           if (Number.isFinite(fromTs) && ts < fromTs) return false;
           if (Number.isFinite(toTs) && ts > toTs) return false;
           if (form.deviceId && did !== form.deviceId) return false;
@@ -429,7 +443,7 @@ export default function ExportPage() {
         >
           {isLoading ? "Preparing…" : "Download CSV"}
         </button>
-        <p className="text-sm text-slate-400">CSV includes user-friendly fields and parameter values.</p>
+        <p className="text-sm text-slate-400">CSV includes only devices available to your site.</p>
       </div>
     </div>
   );

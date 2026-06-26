@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../auth/auth";
+import { getAllSiteConfigs, getSiteConfig, type SiteKey } from "../config/sites";
 
 type Role = "user" | "admin";
 
@@ -9,6 +10,8 @@ type User = {
   email: string;
   role: Role;
   password: string;
+  siteKey: SiteKey;
+  siteId: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -40,10 +43,20 @@ const isValidEmail = (email: string) => /\S+@\S+\.\S+/.test(email);
 
 export default function MorePage() {
   const { state } = useAuth();
-  const isAdmin = state.role === "admin" || state.userId === "CEAT" || state.userId === "Company_A";
+  const isAdmin = state.role === "admin";
+  const activeSite = getSiteConfig(state.siteKey);
+  const siteOptions = getAllSiteConfigs();
   const [users, setUsers] = useState<User[]>(() => loadUsers());
+  const visibleUsers = users.filter((user) => getSiteConfig(user.siteKey).siteId === activeSite.siteId);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", role: "user" as Role, password: "", confirm: "" });
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    role: "user" as Role,
+    password: "",
+    confirm: "",
+    siteKey: activeSite.key as SiteKey,
+  });
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -53,7 +66,7 @@ export default function MorePage() {
 
   const resetForm = () => {
     setEditingId(null);
-    setForm({ name: "", email: "", role: "user", password: "", confirm: "" });
+    setForm({ name: "", email: "", role: "user", password: "", confirm: "", siteKey: activeSite.key as SiteKey });
     setError("");
     setNotice("");
   };
@@ -64,7 +77,7 @@ export default function MorePage() {
       return;
     }
     setEditingId(user.id);
-    setForm({ name: user.name, email: user.email, role: user.role, password: "", confirm: "" });
+    setForm({ name: user.name, email: user.email, role: user.role, password: "", confirm: "", siteKey: user.siteKey });
     setError("");
     setNotice("");
   };
@@ -90,6 +103,7 @@ export default function MorePage() {
     const name = form.name.trim();
     const email = form.email.trim().toLowerCase();
     const role = form.role;
+    const site = getSiteConfig(form.siteKey);
     if (!name) return setError("Name is required.");
     if (!email || !isValidEmail(email)) return setError("Valid email is required.");
     if (!role) return setError("Role is required.");
@@ -105,6 +119,8 @@ export default function MorePage() {
           name,
           email,
           role,
+          siteKey: site.key as SiteKey,
+          siteId: site.siteId,
           updatedAt: Date.now(),
         };
         if (form.password) {
@@ -136,12 +152,14 @@ export default function MorePage() {
       email,
       role,
       password: form.password,
+      siteKey: site.key as SiteKey,
+      siteId: site.siteId,
       createdAt: now,
       updatedAt: now,
     };
     setUsers((prev) => [user, ...prev]);
     setNotice("User created.");
-    setForm({ name: "", email: "", role: "user", password: "", confirm: "" });
+    setForm({ name: "", email: "", role: "user", password: "", confirm: "", siteKey: activeSite.key as SiteKey });
   };
 
   const formatDate = (ts: number) => new Date(ts).toLocaleString();
@@ -193,6 +211,22 @@ export default function MorePage() {
                   </select>
                 </label>
                 <label className="text-sm text-slate-500">
+                  Site
+                  <select
+                    value={form.siteKey}
+                    onChange={(e) => setForm((f) => ({ ...f, siteKey: e.target.value as SiteKey }))}
+                    className="mt-1 w-full glass rounded-lg px-3 py-2 border border-white/5 bg-panel"
+                  >
+                    {siteOptions
+                      .filter((site) => site.siteId === activeSite.siteId)
+                      .map((site) => (
+                      <option key={site.key} value={site.key}>
+                        {site.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm text-slate-500">
                   {editingId ? "New password (optional)" : "Password"}
                   <input
                     type="password"
@@ -241,7 +275,7 @@ export default function MorePage() {
               <p className="text-sm text-slate-400">Users</p>
               <h2 className="text-xl font-semibold">Active accounts</h2>
             </div>
-            <span className="text-xs text-slate-500">{users.length} total</span>
+            <span className="text-xs text-slate-500">{visibleUsers.length} total</span>
           </div>
           <div className="overflow-auto max-h-[420px]">
             <table className="min-w-full text-sm">
@@ -249,16 +283,18 @@ export default function MorePage() {
                 <tr>
                   <th className="px-3 py-2 text-left">Name</th>
                   <th className="px-3 py-2 text-left">Email</th>
+                  <th className="px-3 py-2 text-left">Site</th>
                   <th className="px-3 py-2 text-left">Role</th>
                   <th className="px-3 py-2 text-left">Updated</th>
                   <th className="px-3 py-2 text-left">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
+                {visibleUsers.map((u) => (
                   <tr key={u.id} className="border-t border-white/5 hover:bg-white/5">
                     <td className="px-3 py-2 font-semibold text-slate-200">{u.name}</td>
                     <td className="px-3 py-2 text-slate-300">{u.email}</td>
+                    <td className="px-3 py-2 text-slate-300">{getSiteConfig(u.siteKey).displayName}</td>
                     <td className="px-3 py-2">
                       <span className={`px-2 py-1 rounded-full text-xs font-semibold ${u.role === "admin" ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-slate-50 text-slate-700 border border-slate-200"}`}>
                         {u.role}
@@ -279,7 +315,7 @@ export default function MorePage() {
                 ))}
               </tbody>
             </table>
-            {users.length === 0 && <p className="text-slate-400 text-sm mt-3">No users created yet.</p>}
+            {visibleUsers.length === 0 && <p className="text-slate-400 text-sm mt-3">No users created yet.</p>}
           </div>
         </div>
       </div>
@@ -287,4 +323,3 @@ export default function MorePage() {
     </div>
   );
 }
-
