@@ -122,6 +122,16 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 - Decode telemetry parameter arrays and parameter-like payload objects.
 - Extract env, press, numeric metrics, formatted labels, and shift count values.
 
+`src/utils/energyMeter.ts`
+- Classifies decoded numeric metrics into Consumption, Power, Reactive Energy, Voltage, Current, and Power Quality groups.
+- Keeps maximum-demand kW/kVA distinct from total kW/kVA through explicit token matching.
+- Resolves `meter_kvarh_lag` and `meter_kvarh_lead`; omits the Reactive Energy group when both are absent.
+- Builds Voltage, Current, Active Power, Power Quality, and Energy chart presets. Active Power includes maximum demand, while Energy includes Lag/Lead kVArh.
+
+`src/components/EnergyKpiCard.tsx` and `src/components/EnergyMetricGroupCard.tsx`
+- Render the energy groups in dashboard/device and overview contexts.
+- Use a dedicated rose/fuchsia/purple tone for Reactive Energy.
+
 `src/components/TelemetryParameterList.tsx`
 - Shared decoded parameter list used by Dashboard and Devices.
 - Hides shift production counters from the general parameter list.
@@ -151,6 +161,7 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 - Enable threshold lines only for phase amperage metric selections on non-energy pages.
 - Use oscilloscope-style zoom/pan time controls.
 - Render grouped energy presets and energy panels for meter-focused sites.
+- Include maximum-demand series in Active Power charts and Lag/Lead kVArh series in Energy charts when present.
 
 `src/pages/DashboardPage.tsx` and `src/pages/DevicesPage.tsx`
 - Switch layout and component composition based on site feature flags.

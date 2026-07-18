@@ -1,6 +1,6 @@
 import { formatParameterValue, getNumericParameterMetrics, type NumericMetric } from "./metrics";
 
-export type EnergyGroupTone = "consumption" | "power" | "voltage" | "current" | "quality";
+export type EnergyGroupTone = "consumption" | "reactive" | "power" | "voltage" | "current" | "quality";
 export type EnergyGroupLayout = "summary" | "phase_table";
 
 export type EnergyMetricChip = {
@@ -67,7 +67,15 @@ const matchesMetric = (candidate: MetricLike, aliases: string[][]) => {
 };
 
 const takeFirst = <T extends MetricLike>(metrics: T[], aliases: string[][]) =>
-  sortMetrics(metrics).find((metric) => matchesMetric(metric, aliases));
+  aliases.reduce<T | undefined>(
+    (match, alias) => match ?? sortMetrics(metrics).find((metric) => matchesMetric(metric, [alias])),
+    undefined
+  );
+
+const isMaximumDemandMetric = (metric: MetricLike) => {
+  const tokens = buildTokenSet(metric);
+  return tokens.has("demand") && (tokens.has("max") || tokens.has("maximum"));
+};
 
 const toMetricLike = (metric: NumericMetric): MetricLike => ({
   id: metric.id,
@@ -173,12 +181,27 @@ const phaseRowsToChips = (rows: PhaseMetricRow[]) =>
 
 export function buildEnergyMetricGroups(item: any): EnergyMetricGroup[] {
   const metrics = getNumericParameterMetrics(item).map(toMetricLike);
+  const regularPowerMetrics = metrics.filter((metric) => !isMaximumDemandMetric(metric));
 
   const kwh = takeFirst(metrics, [["meter", "kwh", "total"], ["kwh"]]);
-  const kw = takeFirst(metrics, [["meter", "kw", "total"], ["kw"]]);
-  const kva = takeFirst(metrics, [["meter", "kva", "total"], ["kva"]]);
+  const kw = takeFirst(regularPowerMetrics, [["meter", "kw", "total"], ["kw"]]);
+  const kva = takeFirst(regularPowerMetrics, [["meter", "kva", "total"], ["kva"]]);
   const kvar = takeFirst(metrics, [["meter", "kvar", "total"], ["kvar"]]);
   const kvah = takeFirst(metrics, [["meter", "kvah", "total"], ["kvah"]]);
+  const kvarhLag = takeFirst(metrics, [["meter", "kvarh", "lag"], ["kvarh", "lag"]]);
+  const kvarhLead = takeFirst(metrics, [["meter", "kvarh", "lead"], ["kvarh", "lead"]]);
+  const maxDemandKw = takeFirst(metrics, [
+    ["meter", "max", "demand", "kw"],
+    ["meter", "maximum", "demand", "kw"],
+    ["max", "demand", "kw"],
+    ["maximum", "demand", "kw"],
+  ]);
+  const maxDemandKva = takeFirst(metrics, [
+    ["meter", "max", "demand", "kva"],
+    ["meter", "maximum", "demand", "kva"],
+    ["max", "demand", "kva"],
+    ["maximum", "demand", "kva"],
+  ]);
   const frequency = takeFirst(metrics, [["meter", "frequency"], ["frequency"], ["hz"]]);
   const pf = takeFirst(metrics, [["meter", "pf", "system"], ["pf"]]);
 
@@ -207,7 +230,7 @@ export function buildEnergyMetricGroups(item: any): EnergyMetricGroup[] {
     } satisfies EnergyMetricChip;
   };
 
-  return [
+  const groups: EnergyMetricGroup[] = [
     {
       key: "consumption",
       title: "Consumption",
@@ -224,6 +247,18 @@ export function buildEnergyMetricGroups(item: any): EnergyMetricGroup[] {
         toChip(kw, "kW", "kW"),
         toChip(kva, "kVA", "kVA"),
         toChip(kvar, "kVAr", "kVAr"),
+        toChip(maxDemandKw, "Max Demand kW", "Max Demand kW"),
+        toChip(maxDemandKva, "Max Demand kVA", "Max Demand kVA"),
+      ].filter((entry): entry is EnergyMetricChip => Boolean(entry)),
+    },
+    {
+      key: "reactive-energy",
+      title: "Reactive Energy",
+      tone: "reactive",
+      primary: toChip(kvarhLag ?? kvarhLead, "Reactive Energy", kvarhLag ? "Lag kVArh" : "Lead kVArh"),
+      metrics: [
+        toChip(kvarhLag, "Lag kVArh", "Lag kVArh"),
+        toChip(kvarhLead, "Lead kVArh", "Lead kVArh"),
       ].filter((entry): entry is EnergyMetricChip => Boolean(entry)),
     },
     {
@@ -256,26 +291,39 @@ export function buildEnergyMetricGroups(item: any): EnergyMetricGroup[] {
       ].filter((entry): entry is EnergyMetricChip => Boolean(entry)),
     },
   ];
+
+  return groups.filter((group) => group.key !== "reactive-energy" || group.metrics.length > 0);
 }
 
 export function buildEnergyPresets(metrics: MetricLike[]): EnergyPreset[] {
   const sorted = sortMetrics(metrics);
+  const regularPowerMetrics = sorted.filter((metric) => !isMaximumDemandMetric(metric));
   const voltageMetricIds = sorted.filter(isVoltageMetric).map((metric) => metric.id);
   const currentMetricIds = sorted.filter(isCurrentMetric).map((metric) => metric.id);
-  const powerMetricIds = [takeFirst(sorted, [["meter", "kw", "total"], ["kw"]]), takeFirst(sorted, [["meter", "kva", "total"], ["kva"]])]
+  const powerMetricIds = [
+    takeFirst(regularPowerMetrics, [["meter", "kw", "total"], ["kw"]]),
+    takeFirst(regularPowerMetrics, [["meter", "kva", "total"], ["kva"]]),
+    takeFirst(sorted, [["meter", "max", "demand", "kw"], ["meter", "maximum", "demand", "kw"], ["max", "demand", "kw"], ["maximum", "demand", "kw"]]),
+    takeFirst(sorted, [["meter", "max", "demand", "kva"], ["meter", "maximum", "demand", "kva"], ["max", "demand", "kva"], ["maximum", "demand", "kva"]]),
+  ]
     .filter((metric): metric is MetricLike => Boolean(metric))
     .map((metric) => metric.id);
   const powerFactorMetricIds = sorted.filter(isPowerQualityMetric).map((metric) => metric.id);
-  const energyMetricIds = [takeFirst(sorted, [["meter", "kwh", "total"], ["kwh"]]), takeFirst(sorted, [["meter", "kvah", "total"], ["kvah"]])]
+  const energyMetricIds = [
+    takeFirst(sorted, [["meter", "kwh", "total"], ["kwh"]]),
+    takeFirst(sorted, [["meter", "kvah", "total"], ["kvah"]]),
+    takeFirst(sorted, [["meter", "kvarh", "lag"], ["kvarh", "lag"]]),
+    takeFirst(sorted, [["meter", "kvarh", "lead"], ["kvarh", "lead"]]),
+  ]
     .filter((metric): metric is MetricLike => Boolean(metric))
     .map((metric) => metric.id);
 
   return [
     { id: "voltage", title: "Voltage", description: "L1/L2/L3 voltage pages", metricIds: Array.from(new Set(voltageMetricIds)) },
     { id: "current", title: "Current", description: "L1/L2/L3 current pages", metricIds: Array.from(new Set(currentMetricIds)) },
-    { id: "power", title: "Active Power", description: "kW and kVA", metricIds: Array.from(new Set(powerMetricIds)) },
+    { id: "power", title: "Active Power", description: "kW, kVA, and maximum demand", metricIds: Array.from(new Set(powerMetricIds)) },
     { id: "powerFactor", title: "Power Quality", description: "PF, Hz, THD", metricIds: Array.from(new Set(powerFactorMetricIds)) },
-    { id: "energy", title: "Energy", description: "kWh and kVAh", metricIds: Array.from(new Set(energyMetricIds)) },
+    { id: "energy", title: "Energy", description: "kWh, kVAh, and reactive energy", metricIds: Array.from(new Set(energyMetricIds)) },
   ];
 }
 

@@ -1,6 +1,6 @@
 # BIOT Web Documentation
 
-Last updated: 2026-06-26
+Last updated: 2026-07-18
 
 Branch covered: `NewUI_withMeter`
 
@@ -44,4 +44,4 @@ This folder contains complete software documentation for the BIOT Web applicatio
 
 - Stack: React 18, TypeScript, Vite 5, React Router, TanStack Query, Recharts, Framer Motion, Tailwind CSS.
 - Data source: single AWS API Gateway endpoint (`/prod`) returning Lambda-style JSON payloads, plus alarm ACK posts to `/prod/alarms/ack`.
-- Primary domain: multi-site realtime and historical BIOT telemetry with site-scoped access control, decoded parameter display, energy-meter KPI views, numeric metric charting, shift production summaries, and offline/alarm health states.
+- Primary domain: multi-site realtime and historical BIOT telemetry with site-scoped access control, decoded parameter display, energy-meter KPI views (including maximum demand and Lag/Lead reactive energy), numeric metric charting, shift production summaries, and offline/alarm health states.

@@ -21,6 +21,7 @@ UI indicators:
 - Last seen timestamp on live pages.
 - Uptime chart and anomaly queue in analytics.
 - Site-branded meter KPI cards for the BlackStar Products energy site.
+- Dedicated Reactive Energy card when `meter_kvarh_lag` or `meter_kvarh_lead` is present.
 
 Operational interpretation:
 - Repeated `stale/offline` bursts may indicate connectivity issues.
@@ -57,6 +58,14 @@ Issue: expected page missing in left menu
 Issue: no devices appear after login
 - Cause: fast realtime payload may be missing `siteId` or `deviceType`, or backend rows do not match the authenticated site policy.
 - Action: verify a full fetch succeeds and that returned rows contain matching `siteId` plus allowed `deviceType` values for the selected site.
+
+Issue: Reactive Energy card is missing
+- Cause: neither `meter_kvarh_lag` nor `meter_kvarh_lead` is present as a numeric decoded parameter in the current realtime row.
+- Action: inspect the API payload `parameters` array, confirm the exact keys and `kVArh` values are published, then verify the realtime endpoint contains the updated firmware record.
+
+Issue: Reactive Energy card shows zero
+- Zero is a valid numeric reading and does not indicate a UI extraction failure.
+- Compare the API payload value with the physical meter Lag/Lead display and firmware serial output.
 
 Issue: ACK button does not appear for an alarming device
 - Cause: ACK is shown only when the device is online, the current row indicates common alarm, and the alarm lifecycle builder still sees an open alarm row for that device.

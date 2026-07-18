@@ -158,9 +158,6 @@ export default function DashboardPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Realtime Meters</p>
                 <h3 className="text-2xl font-semibold text-slate-900">Live Meter Feed</h3>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600">
-                Site: <span className="font-semibold text-slate-900">{activeSite.displayName}</span>
-              </div>
             </div>
 
             <div className="space-y-4">

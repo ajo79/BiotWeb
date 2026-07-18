@@ -7,6 +7,7 @@ type Props = {
 
 const toneAccent = {
   consumption: "from-cyan-500 to-sky-600",
+  reactive: "from-rose-600 via-fuchsia-600 to-purple-700",
   power: "from-slate-900 via-indigo-900 to-blue-900",
   voltage: "from-indigo-500 to-violet-600",
   current: "from-blue-500 to-cyan-600",

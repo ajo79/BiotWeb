@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-BIOT Web is a browser-based telemetry console for BIOT/ESP32 devices. It supports secure login, site-scoped fleet monitoring, per-device analysis, historical visualization, alarms, analytics, CSV export, alarm acknowledgement, and basic local user management.
+BIOT Web is a browser-based telemetry console for BIOT/ESP32 devices. It supports browser-local login, client-side site-scoped fleet monitoring, per-device analysis, historical visualization, alarms, analytics, CSV export, alarm acknowledgement, and basic local user management. The current authentication and site filtering are suitable for controlled/demo deployments, not server-enforced production security.
 
 This document reflects branch `NewUI_withMeter`.
 
@@ -72,6 +72,9 @@ FR-004 Device List
 - System shall display wifi and decoded telemetry parameter cards per device for general telemetry sites.
 - System shall display shift production donut summaries for `type_002` devices when shift count data is available.
 - System shall display grouped energy KPI cards for energy-meter devices when energy metrics are available.
+- System shall display total kW/kVA separately from maximum-demand kW/kVA in the Power card.
+- System shall display `meter_kvarh_lag` and `meter_kvarh_lead` together in a dedicated Reactive Energy card.
+- System shall hide the Reactive Energy card when neither Lag nor Lead kVArh is available.
 - System shall navigate to device detail page on device selection.
 - System shall display realtime refresh copy as `auto-refresh 5s`.
 - System shall show an `ACK` action for active open alarms when the backend alarm row is still open and the device is online.
@@ -96,6 +99,7 @@ FR-006 Graph Page
 - System shall format metric values to two decimals in summaries/tooltips.
 - System shall display live refresh copy as `auto-refresh 5s`.
 - System shall provide preset-driven energy chart selection for energy-meter sites.
+- System shall include maximum-demand kW/kVA in the Active Power preset and Lag/Lead kVArh in the Energy preset when available.
 - System shall support timeline zoom and pan interactions.
 
 FR-007 Alarms
@@ -142,6 +146,11 @@ DR-003 System shall support both environmental metrics and press metrics:
 - decoded `parameters` arrays and JSON payload parameter objects.
 - production count aliases for Shift 1, Shift 2, and Shift 3.
 
+DR-003A System shall support PQM-16 energy parameters:
+- `meter_max_demand_kw` and `meter_max_demand_kva` as distinct maximum-demand readings.
+- `meter_kvarh_lag` and `meter_kvarh_lead` as Lag/Lead reactive-energy readings.
+- Missing optional meter parameters shall not create empty Reactive Energy cards or break chart presets.
+
 DR-004 System shall support history filters by:
 - `deviceId`
 - `from`/`to` fixed site date boundaries (`UTC+05:30`, 00:00:00.000 to 23:59:59.999) converted to epoch milliseconds.
@@ -185,7 +194,6 @@ NFR-004 Security (Current Baseline)
 
 NFR-005 Compatibility
 - Desktop top navigation and mobile drawer navigation supported.
-- Desktop top navigation and mobile drawer navigation supported.
 - Site-specific dashboard and device layouts supported.
 - Modern Chromium/Edge/Firefox expected.
 
@@ -207,5 +215,5 @@ NFR-005 Compatibility
 - History queries return same-day and multi-day data ranges reliably.
 - CSV export contains data for selected device/date filters using IST day boundaries.
 - Device status does not flap offline on minor single-cycle delays.
-- Energy site routes show KPI cards and grouped energy charts for `type_003` devices.
+- Energy site routes show grouped KPI cards and charts for `type_003` devices, including conditional Reactive Energy display and the extended Power/Energy presets.
 - Alarm ACK triggers backend request and refreshes alarms/dashboard/realtime queries.

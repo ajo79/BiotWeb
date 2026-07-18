@@ -78,7 +78,10 @@ Shift production metrics:
 
 Energy meter metrics:
 - Extracted from the generic numeric parameter pipeline.
-- Grouped heuristically into energy, power, voltage, current, and quality presets/cards by `src/utils/energyMeter.ts`.
+- Grouped into Consumption, Power, Reactive Energy, Voltage, Current, and Power Quality cards by `src/utils/energyMeter.ts`.
+- `meter_max_demand_kw` and `meter_max_demand_kva` are displayed in the Power card and Active Power graph preset without being confused with total kW/kVA.
+- `meter_kvarh_lag` and `meter_kvarh_lead` are displayed only in the dedicated Reactive Energy card and are also included in the Energy graph preset.
+- The Reactive Energy card is omitted when both Lag and Lead readings are absent; a single available reading is still displayed.
 - Used heavily for `type_003` meter devices on the BlackStar Products site.
 
 ## 5. Schema Validation
@@ -188,6 +191,8 @@ Energy-specific charting:
 2. Select default preset metrics for energy-site graph page.
 3. Split device-detail charts into separate energy panels by preset/group.
 4. Disable manual threshold overlays on energy grouped panels.
+5. Active Power resolves total kW/kVA plus maximum-demand kW/kVA.
+6. Energy resolves total kWh/kVAh plus Lag/Lead kVArh when those parameters exist in live/history rows.
 
 ## 12. API Error Handling
 

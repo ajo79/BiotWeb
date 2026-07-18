@@ -1,17 +1,21 @@
 import { useMemo } from "react";
 import { useAlarms } from "../hooks/queries";
 import { mergeAlarmRows } from "../utils/alarmRows";
+import { useAuth } from "../auth/auth";
+import { filterAlarmRowsForSession } from "../utils/accessPolicy";
 
 export default function AlarmsPage() {
   const { data, isLoading } = useAlarms();
+  const { state } = useAuth();
 
   const rows = useMemo(() => {
-    return mergeAlarmRows(data ?? []).sort((a, b) => {
+    const visibleAlarms = filterAlarmRowsForSession(data, state);
+    return mergeAlarmRows(visibleAlarms).sort((a, b) => {
       const aTs = Number(a.activeTs ?? 0);
       const bTs = Number(b.activeTs ?? 0);
       return bTs - aTs;
     });
-  }, [data]);
+  }, [data, state]);
 
   return (
     <div className="glass rounded-2xl p-5 border border-white/5 shadow-ambient overflow-hidden">

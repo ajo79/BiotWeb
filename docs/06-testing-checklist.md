@@ -30,6 +30,9 @@ Branch covered: `NewUI_withMeter`.
 - Pie chart renders when data exists.
 - Card navigation to `/devices` filters works.
 - For BlackStar Products site, dashboard shows grouped meter KPI cards and `Live Meter Feed`.
+- Power card shows maximum-demand kW/kVA without replacing total kW/kVA.
+- Reactive Energy card shows Lag and Lead kVArh when either parameter is available.
+- Reactive Energy card is absent when both parameters are missing.
 
 ## 4. Devices Page
 
@@ -41,6 +44,7 @@ Branch covered: `NewUI_withMeter`.
 - `type_002` devices show Shift Production donut when shift count values exist.
 - Clicking card opens `/devices/:id`.
 - BlackStar Products devices render grouped energy metric cards when energy metrics are present.
+- Reactive Energy uses the dedicated rose/fuchsia/purple header and remains legible on desktop and mobile.
 - ACK button appears only for eligible open alarms and shows success/failure feedback.
 
 ## 5. Device Detail
@@ -65,6 +69,8 @@ Branch covered: `NewUI_withMeter`.
 - Tooltip values are shown with two decimals.
 - Stats (min/max/avg) render correctly.
 - Energy-site graph page shows preset chips and grouped energy overview cards.
+- Active Power preset includes maximum-demand kW/kVA when available.
+- Energy preset includes Lag/Lead kVArh when available and tolerates gaps in older history.
 - Zoom, pan slider, and mouse-wheel timeline zoom work in both graph flows.
 
 ## 7. Alarms

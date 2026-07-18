@@ -11,6 +11,7 @@ type EnergyKpiCardProps = {
 
 const toneAccent: Record<EnergyGroupTone, string> = {
   consumption: "from-cyan-500 to-sky-600",
+  reactive: "from-rose-600 via-fuchsia-600 to-purple-700",
   power: "from-slate-900 via-indigo-900 to-blue-900",
   voltage: "from-indigo-500 to-violet-600",
   current: "from-blue-500 to-cyan-600",
@@ -51,7 +52,7 @@ export default function EnergyKpiCard({
   const visibleMetrics = metrics.slice(0, layout === "phase_table" ? 4 : 5);
 
   return (
-    <div className="overflow-hidden rounded-[1.4rem] border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.10)] ring-1 ring-white/70">
+    <div className="flex h-full flex-col overflow-hidden rounded-[1.4rem] border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.10)] ring-1 ring-white/70">
       <div className={`bg-gradient-to-r ${toneAccent[tone]} px-4 py-3 text-white`}>
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -62,14 +63,7 @@ export default function EnergyKpiCard({
         </div>
       </div>
 
-      <div className="min-h-[17rem] bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.75),_transparent_30%),linear-gradient(180deg,#f8fbff_0%,#eef4ea_100%)] px-4 py-4 text-slate-900">
-        <div className="mb-4 flex items-center justify-between">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Live Meter Page</p>
-          <div className="rounded-full border border-slate-200 bg-white/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            BlackStar
-          </div>
-        </div>
-
+      <div className="min-h-[17rem] flex-1 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.75),_transparent_30%),linear-gradient(180deg,#f8fbff_0%,#eef4ea_100%)] px-4 py-4 text-slate-900">
         {layout === "phase_table" ? (
           visibleMetrics.length ? (
             <DigitalRows metrics={visibleMetrics} />
@@ -111,10 +105,6 @@ export default function EnergyKpiCard({
         )}
       </div>
 
-      <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/80 px-4 py-3 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
-        <span>BlackStar Products</span>
-        <span>Live</span>
-      </div>
     </div>
   );
 }

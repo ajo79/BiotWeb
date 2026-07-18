@@ -10,7 +10,7 @@ Branch covered: `NewUI_withMeter`.
 
 ## 2. Local Setup
 
-From project root (`BiotWeb`):
+From project root (`BiotWeb-NewUI_withMeter`):
 
 1. Install dependencies:
    `npm install`
@@ -110,6 +110,8 @@ Optional:
 - Realtime and history pages load telemetry.
 - Dashboard, Devices, and Graph display `5s` realtime refresh labels.
 - Energy meter pages render for `SITE-02` / `type_003` devices.
+- Power cards show maximum-demand kW/kVA when supplied.
+- Reactive Energy cards show Lag/Lead kVArh when supplied and remain absent for older payloads.
 - Same-day history range returns expected data.
 - CSV export works.
 - Date-only history/export filtering honors fixed IST boundaries (`UTC+05:30`).
