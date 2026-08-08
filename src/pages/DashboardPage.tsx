@@ -15,6 +15,11 @@ import { filterRowsForSession } from "../utils/accessPolicy";
 import { buildEnergyMetricGroups } from "../utils/energyMeter";
 
 const COLORS = ["#16A34A", "#F97316", "#0EA5E9", "#E2E8F0"];
+const HEALTH_COLOR_MAP: Record<string, string> = {
+  "Online": "#16A34A", // green
+  "Good": "#0284C7",   // blue
+  "Issue": "#dc2626",  // red
+};
 const HEARTBEAT_THRESHOLD_MS = 10_000;
 const POLLING_GRANULARITY_MS = 5_000;
 const OFFLINE_AFTER_MS = HEARTBEAT_THRESHOLD_MS + POLLING_GRANULARITY_MS;
@@ -61,11 +66,18 @@ function classify(item: any) {
 }
 
 function buildSummary(items: any[] = []) {
-  const total = items.length;
+  const uniqueItems = Array.from(
+    new Map(
+      items
+        .filter((item) => String(item?.deviceId ?? "").trim())
+        .map((item) => [String(item.deviceId).trim().toUpperCase(), item])
+    ).values()
+  );
+  const total = uniqueItems.length;
   let online = 0;
   let good = 0;
   let issue = 0;
-  items.forEach((item) => {
+  uniqueItems.forEach((item) => {
     const { online: on, category } = classify(item);
     if (on) online += 1;
     if (category === "good") good += 1;
@@ -102,13 +114,13 @@ export default function DashboardPage() {
   }, [feedItems]);
 
   const fallbackSummary = useMemo(() => {
-    const source = data?.RealTimeDataMonitor?.length ? data.RealTimeDataMonitor : data?.IoTReadings ?? [];
-    return buildSummary(filterRowsForSession(source, state));
-  }, [data?.RealTimeDataMonitor, data?.IoTReadings, state]);
+    return buildSummary(filterRowsForSession(data?.RealTimeDataMonitor ?? [], state));
+  }, [data?.RealTimeDataMonitor, state]);
 
   const summary = realtimeSummary ?? fallbackSummary ?? { total: 0, online: 0, good: 0, issue: 0 };
   const pct = (value: number) => (summary.total ? Math.round((value / summary.total) * 100) : 0);
   const pieData = [
+    { name: "Online", value: summary.online },
     { name: "Good", value: summary.good },
     { name: "Issue", value: summary.issue },
   ].filter((d) => d.value > 0);
@@ -158,9 +170,6 @@ export default function DashboardPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Realtime Meters</p>
                 <h3 className="text-2xl font-semibold text-slate-900">Live Meter Feed</h3>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600">
-                Site: <span className="font-semibold text-slate-900">{activeSite.displayName}</span>
-              </div>
             </div>
 
             <div className="space-y-4">
@@ -202,8 +211,8 @@ export default function DashboardPage() {
                           tone={group.tone}
                           primary={group.primary}
                           metrics={group.metrics}
-                          subtitle={item.deviceName || item.deviceId}
                           layout={group.layout}
+                          showPrimary={false}
                         />
                       ))}
                     </div>
@@ -230,7 +239,7 @@ export default function DashboardPage() {
                     <PieChart>
                       <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90} paddingAngle={4}>
                         {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          <Cell key={`cell-${index}`} fill={HEALTH_COLOR_MAP[entry.name] || COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
                     </PieChart>
@@ -239,7 +248,7 @@ export default function DashboardPage() {
                 <div className="absolute left-4 bottom-3 flex gap-3 flex-wrap items-center text-sm">
                   {pieData.map((d, i) => (
                     <span key={d.name} className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full" style={{ background: COLORS[i % COLORS.length] }}></span>
+                      <span className="w-3 h-3 rounded-full" style={{ background: HEALTH_COLOR_MAP[d.name] || COLORS[i % COLORS.length] }}></span>
                       <span>
                         {d.name}: {d.value}
                       </span>
@@ -345,7 +354,7 @@ export default function DashboardPage() {
                   <PieChart>
                     <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90} paddingAngle={4}>
                       {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Cell key={`cell-${index}`} fill={HEALTH_COLOR_MAP[entry.name] || COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
                   </PieChart>
@@ -354,7 +363,7 @@ export default function DashboardPage() {
               <div className="absolute left-4 bottom-3 flex gap-3 flex-wrap items-center text-sm">
                 {pieData.map((d, i) => (
                   <span key={d.name} className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full" style={{ background: COLORS[i % COLORS.length] }}></span>
+                    <span className="w-3 h-3 rounded-full" style={{ background: HEALTH_COLOR_MAP[d.name] || COLORS[i % COLORS.length] }}></span>
                     <span>
                       {d.name}: {d.value}
                     </span>

@@ -20,6 +20,25 @@ export function filterRowsForSession<T>(rows: T[] | undefined, state: Pick<AuthS
   return (rows ?? []).filter((row) => isAllowedDeviceForSite(row, site));
 }
 
+/**
+ * Alarm payloads do not include deviceType, so alarm access is scoped by
+ * siteId alone. Records from legacy devices without a siteId belong to CEAT.
+ */
+export function filterAlarmRowsForSession<T>(
+  rows: T[] | undefined,
+  state: Pick<AuthState, "siteKey" | "siteId">
+) {
+  const site = resolveActiveSite(state);
+  const activeSiteId = normalize(site.siteId);
+  const acceptsLegacyAlarms = site.key === "CEAT";
+
+  return (rows ?? []).filter((row) => {
+    const alarmSiteId = normalize((row as any)?.siteId);
+    if (!alarmSiteId) return acceptsLegacyAlarms;
+    return alarmSiteId === activeSiteId;
+  });
+}
+
 export function buildAllowedDeviceIdSet(rows: any[] | undefined, state: Pick<AuthState, "siteKey" | "siteId">) {
   return new Set(
     filterRowsForSession(rows, state)

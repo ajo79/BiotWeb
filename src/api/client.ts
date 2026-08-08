@@ -761,6 +761,25 @@ function deviceKey(item: any) {
   return String(raw).trim().toUpperCase();
 }
 
+function latestReadingPerDevice(items: Reading[] = []): Reading[] {
+  const byDevice = new Map<string, Reading>();
+
+  items.forEach((item) => {
+    const key = deviceKey(item);
+    if (!key) return;
+
+    const existing = byDevice.get(key);
+    const currentTs = Number(item?.ts ?? 0);
+    const existingTs = Number(existing?.ts ?? 0);
+
+    if (!existing || currentTs >= existingTs) {
+      byDevice.set(key, item);
+    }
+  });
+
+  return Array.from(byDevice.values());
+}
+
 function hasObject(value: any) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -807,18 +826,13 @@ function mergeReadingWithFallback(primary: any, fallback: any) {
   return merged;
 }
 
-function mergeRealtimeAndReadings(realtime: any[], readings: any[]) {
+function enrichRealtimeFromReadings(realtime: any[], readings: any[]) {
   const realtimeSafe = Array.isArray(realtime) ? realtime : [];
   const readingsSafe = Array.isArray(readings) ? readings : [];
 
-  if (!realtimeSafe.length && !readingsSafe.length) {
-    return { mergedRealtime: [], readingOnly: [] };
-  }
-  if (!realtimeSafe.length) {
-    return { mergedRealtime: [], readingOnly: readingsSafe };
-  }
+  if (!realtimeSafe.length) return [];
   if (!readingsSafe.length) {
-    return { mergedRealtime: realtimeSafe, readingOnly: [] };
+    return realtimeSafe;
   }
 
   const readingsByDevice = new Map<string, any>();
@@ -832,20 +846,12 @@ function mergeRealtimeAndReadings(realtime: any[], readings: any[]) {
     }
   });
 
-  const mergedRealtime = realtimeSafe.map((item) => {
+  return realtimeSafe.map((item) => {
     const key = deviceKey(item);
     if (!key) return item;
     const fallback = readingsByDevice.get(key);
     return mergeReadingWithFallback(item, fallback);
   });
-
-  const realtimeKeys = new Set(mergedRealtime.map(deviceKey).filter(Boolean));
-  const readingOnly = readingsSafe.filter((item) => {
-    const key = deviceKey(item);
-    return !key || !realtimeKeys.has(key);
-  });
-
-  return { mergedRealtime, readingOnly };
 }
 
 async function fetchDashboardData(options: FetchDashboardOptions = {}): Promise<DashboardResponse> {
@@ -870,7 +876,7 @@ async function fetchDashboardData(options: FetchDashboardOptions = {}): Promise<
   const IoTReadings = normalizeArray(json?.IoTReadings);
   const RealTimeDataMonitor = normalizeArray(json?.RealTimeDataMonitor);
   const ESP32_Alarms = normalizeArray(json?.ESP32_Alarms);
-  const summary = buildHealthSummary(RealTimeDataMonitor.length ? RealTimeDataMonitor : IoTReadings);
+  const summary = buildHealthSummary(latestReadingPerDevice(RealTimeDataMonitor));
 
   return {
     IoTReadings,
@@ -1088,16 +1094,13 @@ export async function getDashboard() {
 function buildRealtimeResult(data: DashboardResponse) {
   const realtimeRaw = data.RealTimeDataMonitor ?? [];
   const historyRaw = data.IoTReadings ?? [];
-  const { mergedRealtime, readingOnly } = mergeRealtimeAndReadings(realtimeRaw, historyRaw);
-  const realtimeItems = mergedRealtime.filter((item) => item?._schemaValid);
-  const fallbackItems = readingOnly.filter((item) => item?._schemaValid);
-  const baseItems = realtimeItems.length ? [...realtimeItems, ...fallbackItems] : fallbackItems;
-  const items = applyRealtimeHealthState(baseItems);
-  const realtimeKeys = new Set(realtimeItems.map((item) => deviceKey(item)).filter(Boolean));
-  const annotatedRealtimeItems = realtimeItems.length
-    ? items.filter((item) => realtimeKeys.has(deviceKey(item)))
-    : [];
-  const summary = annotatedRealtimeItems.length ? buildHealthSummary(annotatedRealtimeItems) : data.summary;
+  const realtimeItems = enrichRealtimeFromReadings(realtimeRaw, historyRaw).filter((item) => deviceKey(item));
+  // RealTimeDataMonitor is the device inventory for live UI surfaces. History
+  // may enrich matching realtime rows above, but must never recreate a device
+  // that has been removed from the realtime collection.
+  const items = applyRealtimeHealthState(latestReadingPerDevice(realtimeItems));
+  const annotatedRealtimeItems = items;
+  const summary = buildHealthSummary(items);
 
   return { items, realtimeItems: annotatedRealtimeItems, summary };
 }
@@ -1313,6 +1316,6 @@ export async function getAnalytics() {
     alarms,
     anomalies,
     summary,
-    totalDevices: byDevice.size,
+    totalDevices: latestReadingPerDevice(realtime).length,
   };
 }

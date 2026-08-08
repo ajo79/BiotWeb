@@ -1,6 +1,6 @@
 # Setup, Build, and Deployment Guide
 
-Branch covered: `NewUI_withMeter`.
+Branch covered: `NewUI_withMeter_08_08_2026`.
 
 ## 1. Prerequisites
 
@@ -10,7 +10,7 @@ Branch covered: `NewUI_withMeter`.
 
 ## 2. Local Setup
 
-From project root (`BiotWeb`):
+From the web project root:
 
 1. Install dependencies:
    `npm install`
@@ -90,7 +90,7 @@ Recommended upload flow:
 
 Do not extract into `public_html/dist`; the app expects `index.html` at the web root.
 
-If GoDaddy is connected to GitHub auto-deploy, confirm the deployment branch is `NewUI_withMeter` or merge this branch into the configured deployment branch.
+If GoDaddy is connected to GitHub auto-deploy, confirm the deployment branch is `NewUI_withMeter_08_08_2026` or merge this branch into the configured deployment branch.
 
 ## 8. CI/CD Recommendation
 
@@ -110,6 +110,8 @@ Optional:
 - Realtime and history pages load telemetry.
 - Dashboard, Devices, and Graph display `5s` realtime refresh labels.
 - Energy meter pages render for `SITE-02` / `type_003` devices.
+- Power cards show maximum-demand kW/kVA when supplied.
+- Reactive Energy cards show Lag/Lead kVArh when supplied and remain absent for older payloads.
 - Same-day history range returns expected data.
 - CSV export works.
 - Date-only history/export filtering honors fixed IST boundaries (`UTC+05:30`).

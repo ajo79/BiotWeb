@@ -15,6 +15,11 @@ import {
 
 const EXPORT_PAGE_LIMIT = 1000;
 const EXPORT_MAX_PAGES = 500;
+const EXCLUDED_EXPORT_PARAMETER_KEYS = new Set([
+  "meter_modbus_address",
+  "meter_modbus_baud",
+  "meter_modbus_parity",
+]);
 
 type ExportParam = {
   id: string;
@@ -81,6 +86,9 @@ const normalizeParametersForExport = (raw: any): ExportParam[] => {
       if (!item || typeof item !== "object") return null;
 
       const key = String(item.key ?? `param_${idx + 1}`);
+      const normalizedKey = key.trim().toLowerCase();
+      if (EXCLUDED_EXPORT_PARAMETER_KEYS.has(normalizedKey)) return null;
+
       const labelBase = String(item.label ?? item.key ?? `Parameter ${idx + 1}`);
       const unit = item.unit != null ? String(item.unit).trim() : "";
       const label = unit && !labelBase.toLowerCase().includes(unit.toLowerCase()) ? `${labelBase} (${unit})` : labelBase;
@@ -88,7 +96,7 @@ const normalizeParametersForExport = (raw: any): ExportParam[] => {
       const order = Number.isFinite(orderRaw) ? orderRaw : idx + 1;
 
       return {
-        id: key.trim().toLowerCase(),
+        id: normalizedKey,
         label: label.trim(),
         order,
         value: item.value,

@@ -10,7 +10,7 @@ import TelemetryParameterList from "../components/TelemetryParameterList";
 import ShiftProductionPie from "../components/ShiftProductionPie";
 import { useAuth } from "../auth/auth";
 import { getSiteConfig } from "../config/sites";
-import { filterRowsForSession } from "../utils/accessPolicy";
+import { filterAlarmRowsForSession, filterRowsForSession } from "../utils/accessPolicy";
 import { buildEnergyMetricGroups } from "../utils/energyMeter";
 import EnergyMetricGroupCard from "../components/EnergyMetricGroupCard";
 import { useAlarmAcknowledge } from "../hooks/useAlarmAcknowledge";
@@ -78,8 +78,8 @@ export default function DevicesPage() {
   }, [data?.items, filter, state]);
 
   const openAlarmDeviceIds = useMemo(
-    () => getOpenAlarmDeviceIds(alarms.data ?? []),
-    [alarms.data]
+    () => getOpenAlarmDeviceIds(filterAlarmRowsForSession(alarms.data, state)),
+    [alarms.data, state]
   );
 
   const buildDeviceAlarmModel = (item: any, itemState: ReturnType<typeof classify>) => {

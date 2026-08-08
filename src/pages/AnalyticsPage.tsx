@@ -40,13 +40,16 @@ export default function AnalyticsPage() {
   const activeSite = getSiteConfig(state.siteKey);
   const dashboard = useDashboard();
   const allowedDeviceIds = buildAllowedDeviceIdSet(
-    [...(dashboard.data?.IoTReadings ?? []), ...(dashboard.data?.RealTimeDataMonitor ?? [])],
+    dashboard.data?.RealTimeDataMonitor ?? [],
     state
   );
-  const summarySource = (dashboard.data?.RealTimeDataMonitor?.length
-    ? dashboard.data.RealTimeDataMonitor
-    : dashboard.data?.IoTReadings ?? []
-  ).filter((row: any) => allowedDeviceIds.has(String(row?.deviceId ?? "").trim()));
+  const summarySource = Array.from(
+    new Map(
+      (dashboard.data?.RealTimeDataMonitor ?? [])
+        .filter((row: any) => allowedDeviceIds.has(String(row?.deviceId ?? "").trim()))
+        .map((row: any) => [String(row.deviceId).trim().toUpperCase(), row])
+    ).values()
+  );
   const filteredSummary = summarySource.reduce(
     (acc, row) => {
       const result = classify(row);

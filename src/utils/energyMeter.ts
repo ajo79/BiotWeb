@@ -1,6 +1,13 @@
 import { formatParameterValue, getNumericParameterMetrics, type NumericMetric } from "./metrics";
 
-export type EnergyGroupTone = "consumption" | "power" | "voltage" | "current" | "quality";
+export type EnergyGroupTone =
+  | "consumption"
+  | "reactive"
+  | "power"
+  | "voltage"
+  | "current"
+  | "quality"
+  | "runtime";
 export type EnergyGroupLayout = "summary" | "phase_table";
 
 export type EnergyMetricChip = {
@@ -21,7 +28,7 @@ export type EnergyMetricGroup = {
 };
 
 export type EnergyPreset = {
-  id: "voltage" | "current" | "power" | "powerFactor" | "energy";
+  id: "voltage" | "current" | "power" | "reactivePower" | "powerFactor" | "energy" | "runtime";
   title: string;
   description: string;
   metricIds: string[];
@@ -67,7 +74,15 @@ const matchesMetric = (candidate: MetricLike, aliases: string[][]) => {
 };
 
 const takeFirst = <T extends MetricLike>(metrics: T[], aliases: string[][]) =>
-  sortMetrics(metrics).find((metric) => matchesMetric(metric, aliases));
+  aliases.reduce<T | undefined>(
+    (match, alias) => match ?? sortMetrics(metrics).find((metric) => matchesMetric(metric, [alias])),
+    undefined
+  );
+
+const isMaximumDemandMetric = (metric: MetricLike) => {
+  const tokens = buildTokenSet(metric);
+  return tokens.has("demand") && (tokens.has("max") || tokens.has("maximum"));
+};
 
 const toMetricLike = (metric: NumericMetric): MetricLike => ({
   id: metric.id,
@@ -84,7 +99,11 @@ const toChip = (metric: MetricLike | undefined, fallbackLabel: string, overrideL
   return {
     id: metric.id,
     label: overrideLabel ?? metric.label ?? metric.displayLabel ?? fallbackLabel,
-    value: formatParameterValue(metric.value),
+    value: formatParameterValue(metric.value, {
+      key: metric.key,
+      label: metric.label,
+      unit: metric.unit,
+    }),
     unit: metric.unit,
     rawValue: metric.value,
   };
@@ -173,12 +192,31 @@ const phaseRowsToChips = (rows: PhaseMetricRow[]) =>
 
 export function buildEnergyMetricGroups(item: any): EnergyMetricGroup[] {
   const metrics = getNumericParameterMetrics(item).map(toMetricLike);
+  const regularPowerMetrics = metrics.filter((metric) => !isMaximumDemandMetric(metric));
 
   const kwh = takeFirst(metrics, [["meter", "kwh", "total"], ["kwh"]]);
-  const kw = takeFirst(metrics, [["meter", "kw", "total"], ["kw"]]);
-  const kva = takeFirst(metrics, [["meter", "kva", "total"], ["kva"]]);
+  const kw = takeFirst(regularPowerMetrics, [["meter", "kw", "total"], ["kw"]]);
+  const kva = takeFirst(regularPowerMetrics, [["meter", "kva", "total"], ["kva"]]);
   const kvar = takeFirst(metrics, [["meter", "kvar", "total"], ["kvar"]]);
   const kvah = takeFirst(metrics, [["meter", "kvah", "total"], ["kvah"]]);
+  const kvarhTotal = takeFirst(metrics, [["meter", "kvarh", "total"], ["kvarh", "total"]]);
+  const kvarhLag = takeFirst(metrics, [["meter", "kvarh", "lag"], ["kvarh", "lag"]]);
+  const kvarhLead = takeFirst(metrics, [["meter", "kvarh", "lead"], ["kvarh", "lead"]]);
+  const loadHour = takeFirst(metrics, [["meter", "load", "hour"], ["load", "hour"]]);
+  const noLoadHour = takeFirst(metrics, [["meter", "no", "load", "hour"], ["no", "load", "hour"]]);
+  const rpm = takeFirst(metrics, [["meter", "rpm"], ["rpm"]]);
+  const maxDemandKw = takeFirst(metrics, [
+    ["meter", "max", "demand", "kw"],
+    ["meter", "maximum", "demand", "kw"],
+    ["max", "demand", "kw"],
+    ["maximum", "demand", "kw"],
+  ]);
+  const maxDemandKva = takeFirst(metrics, [
+    ["meter", "max", "demand", "kva"],
+    ["meter", "maximum", "demand", "kva"],
+    ["max", "demand", "kva"],
+    ["maximum", "demand", "kva"],
+  ]);
   const frequency = takeFirst(metrics, [["meter", "frequency"], ["frequency"], ["hz"]]);
   const pf = takeFirst(metrics, [["meter", "pf", "system"], ["pf"]]);
 
@@ -207,7 +245,7 @@ export function buildEnergyMetricGroups(item: any): EnergyMetricGroup[] {
     } satisfies EnergyMetricChip;
   };
 
-  return [
+  const groups: EnergyMetricGroup[] = [
     {
       key: "consumption",
       title: "Consumption",
@@ -224,7 +262,33 @@ export function buildEnergyMetricGroups(item: any): EnergyMetricGroup[] {
         toChip(kw, "kW", "kW"),
         toChip(kva, "kVA", "kVA"),
         toChip(kvar, "kVAr", "kVAr"),
+        toChip(maxDemandKw, "Max Demand kW", "Max Demand kW"),
+        toChip(maxDemandKva, "Max Demand kVA", "Max Demand kVA"),
       ].filter((entry): entry is EnergyMetricChip => Boolean(entry)),
+    },
+    {
+      key: "reactive-energy",
+      title: "Reactive Energy",
+      tone: "reactive",
+      primary: toChip(
+        kvarhTotal ?? kvarhLag ?? kvarhLead,
+        "Reactive Energy",
+        kvarhTotal ? "Total kVArh" : kvarhLag ? "Lag kVArh" : "Lead kVArh"
+      ),
+      metrics: [
+        toChip(kvarhTotal, "Total kVArh", "Total kVArh"),
+        toChip(kvarhLag, "Lag kVArh", "Lag kVArh"),
+        toChip(kvarhLead, "Lead kVArh", "Lead kVArh"),
+      ].filter((entry): entry is EnergyMetricChip => Boolean(entry)),
+    },
+    {
+      key: "reactive-power",
+      title: "Reactive Power",
+      tone: "reactive",
+      primary: toChip(kvar, "kVAr", "kVAr"),
+      metrics: [toChip(kvar, "kVAr", "kVAr")].filter(
+        (entry): entry is EnergyMetricChip => Boolean(entry)
+      ),
     },
     {
       key: "voltage",
@@ -255,27 +319,107 @@ export function buildEnergyMetricGroups(item: any): EnergyMetricGroup[] {
         averageMetric(currentThd, "ITHD AVG"),
       ].filter((entry): entry is EnergyMetricChip => Boolean(entry)),
     },
+    {
+      key: "runtime",
+      title: "Runtime",
+      tone: "runtime",
+      primary: toChip(loadHour ?? noLoadHour ?? rpm, "Runtime"),
+      metrics: [
+        toChip(loadHour, "Load Hours", "Load Hours"),
+        toChip(noLoadHour, "No-load Hours", "No-load Hours"),
+        toChip(rpm, "RPM", "RPM"),
+      ].filter((entry): entry is EnergyMetricChip => Boolean(entry)),
+    },
   ];
+
+  return groups.filter((group) => group.metrics.length > 0);
 }
 
 export function buildEnergyPresets(metrics: MetricLike[]): EnergyPreset[] {
   const sorted = sortMetrics(metrics);
+  const regularPowerMetrics = sorted.filter((metric) => !isMaximumDemandMetric(metric));
   const voltageMetricIds = sorted.filter(isVoltageMetric).map((metric) => metric.id);
   const currentMetricIds = sorted.filter(isCurrentMetric).map((metric) => metric.id);
-  const powerMetricIds = [takeFirst(sorted, [["meter", "kw", "total"], ["kw"]]), takeFirst(sorted, [["meter", "kva", "total"], ["kva"]])]
+  const powerMetricIds = [
+    takeFirst(regularPowerMetrics, [["meter", "kw", "total"], ["kw"]]),
+    takeFirst(regularPowerMetrics, [["meter", "kva", "total"], ["kva"]]),
+    takeFirst(sorted, [["meter", "max", "demand", "kw"], ["meter", "maximum", "demand", "kw"], ["max", "demand", "kw"], ["maximum", "demand", "kw"]]),
+    takeFirst(sorted, [["meter", "max", "demand", "kva"], ["meter", "maximum", "demand", "kva"], ["max", "demand", "kva"], ["maximum", "demand", "kva"]]),
+  ]
     .filter((metric): metric is MetricLike => Boolean(metric))
     .map((metric) => metric.id);
   const powerFactorMetricIds = sorted.filter(isPowerQualityMetric).map((metric) => metric.id);
-  const energyMetricIds = [takeFirst(sorted, [["meter", "kwh", "total"], ["kwh"]]), takeFirst(sorted, [["meter", "kvah", "total"], ["kvah"]])]
+  const reactivePowerMetricIds = [
+    takeFirst(sorted, [["meter", "kvar", "total"], ["kvar", "total"], ["kvar"]]),
+  ]
+    .filter((metric): metric is MetricLike => Boolean(metric))
+    .map((metric) => metric.id);
+  const energyMetricIds = [
+    takeFirst(sorted, [["meter", "kwh", "total"], ["kwh"]]),
+    takeFirst(sorted, [["meter", "kvah", "total"], ["kvah"]]),
+    takeFirst(sorted, [["meter", "kvarh", "total"], ["kvarh", "total"]]),
+    takeFirst(sorted, [["meter", "kvarh", "lag"], ["kvarh", "lag"]]),
+    takeFirst(sorted, [["meter", "kvarh", "lead"], ["kvarh", "lead"]]),
+  ]
+    .filter((metric): metric is MetricLike => Boolean(metric))
+    .map((metric) => metric.id);
+  const runtimeMetricIds = [
+    takeFirst(sorted, [["meter", "load", "hour"], ["load", "hour"]]),
+    takeFirst(sorted, [["meter", "no", "load", "hour"], ["no", "load", "hour"]]),
+    takeFirst(sorted, [["meter", "rpm"], ["rpm"]]),
+  ]
     .filter((metric): metric is MetricLike => Boolean(metric))
     .map((metric) => metric.id);
 
   return [
     { id: "voltage", title: "Voltage", description: "L1/L2/L3 voltage pages", metricIds: Array.from(new Set(voltageMetricIds)) },
     { id: "current", title: "Current", description: "L1/L2/L3 current pages", metricIds: Array.from(new Set(currentMetricIds)) },
-    { id: "power", title: "Active Power", description: "kW and kVA", metricIds: Array.from(new Set(powerMetricIds)) },
+    { id: "power", title: "Active Power", description: "kW, kVA, and maximum demand", metricIds: Array.from(new Set(powerMetricIds)) },
+    { id: "reactivePower", title: "Reactive Power", description: "Total reactive power", metricIds: Array.from(new Set(reactivePowerMetricIds)) },
     { id: "powerFactor", title: "Power Quality", description: "PF, Hz, THD", metricIds: Array.from(new Set(powerFactorMetricIds)) },
-    { id: "energy", title: "Energy", description: "kWh and kVAh", metricIds: Array.from(new Set(energyMetricIds)) },
+    { id: "energy", title: "Energy", description: "kWh, kVAh, and total/Lag/Lead reactive energy", metricIds: Array.from(new Set(energyMetricIds)) },
+    { id: "runtime", title: "Runtime", description: "Load hours, no-load hours, and RPM", metricIds: Array.from(new Set(runtimeMetricIds)) },
+  ];
+}
+
+const CONFIG_METRIC_TOKENS = [
+  "network selection",
+  "ct primary",
+  "ct secondary",
+  "pt primary",
+  "pt secondary",
+  "modbus address",
+  "modbus baud",
+  "modbus parity",
+];
+
+export function isMeterConfigurationMetric(metric: { key?: string; label?: string; displayLabel?: string }) {
+  const text = normalizeText([metric.key, metric.label, metric.displayLabel].filter(Boolean).join(" "));
+  return CONFIG_METRIC_TOKENS.some((token) => text.includes(token));
+}
+
+export function getMeterConfiguration(item: any) {
+  const byKey = new Map(getNumericParameterMetrics(item).map((metric) => [metric.key, metric.value]));
+  const value = (key: string) => byKey.get(key);
+  const network = value("meter_network_selection");
+  const parity = value("meter_modbus_parity");
+
+  const networkLabels: Record<number, string> = { 0: "3P-3W", 1: "3P-4W", 2: "1P-2W" };
+  const parityLabels: Record<number, string> = { 0: "None", 1: "Even", 2: "Odd" };
+  const displaySelector = (raw: number | undefined, labels: Record<number, string>) =>
+    raw == null ? "--" : labels[Math.round(raw)] ?? `Unknown (${raw})`;
+  const displayNumber = (raw: number | undefined, unit = "") =>
+    raw == null ? "--" : `${raw}${unit ? ` ${unit}` : ""}`;
+
+  return [
+    { key: "network", label: "Network", value: displaySelector(network, networkLabels) },
+    { key: "ct-primary", label: "CT Primary", value: displayNumber(value("meter_ct_primary"), "A") },
+    { key: "ct-secondary", label: "CT Secondary", value: displayNumber(value("meter_ct_secondary"), "A") },
+    { key: "pt-primary", label: "PT Primary", value: displayNumber(value("meter_pt_primary"), "V") },
+    { key: "pt-secondary", label: "PT Secondary", value: displayNumber(value("meter_pt_secondary"), "V") },
+    { key: "address", label: "Modbus Address", value: displayNumber(value("meter_modbus_address")) },
+    { key: "baud", label: "Baud Rate", value: displayNumber(value("meter_modbus_baud"), "bps") },
+    { key: "parity", label: "Parity", value: displaySelector(parity, parityLabels) },
   ];
 }
 

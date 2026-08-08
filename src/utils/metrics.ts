@@ -160,18 +160,36 @@ export const formatParameterLabel = (param: Pick<DecodedParameter, "label" | "un
 
 
 const formatNumber = (value: number) => {
-  const fixed = Math.abs(value) >= 100 ? value.toFixed(1) : value.toFixed(2);
-  return fixed.replace(/\.0+$/, "").replace(/(\.\d*?[1-9])0+$/, "$1");
+  return value.toFixed(2);
 };
 
-export const formatParameterValue = (value: any) => {
+const formatPowerFactor = (value: number) => {
+  const truncated = Math.trunc(value * 10000) / 10000;
+  return truncated.toFixed(4);
+};
+
+const isPowerFactorMetric = (context?: { key?: string; label?: string; unit?: string }) => {
+  if (!context) return false;
+  const text = [context.key, context.label, context.unit]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return text.includes("pf") || text.includes("power factor");
+};
+
+export const formatParameterValue = (
+  value: any,
+  context?: { key?: string; label?: string; unit?: string }
+) => {
   if (value == null) return "--";
   if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "number" && Number.isFinite(value)) return formatNumber(value);
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return isPowerFactorMetric(context) ? formatPowerFactor(value) : formatNumber(value);
+  }
   if (typeof value === "string") return value.trim() || "--";
   if (typeof value === "object") {
     const numeric = toNumber(value);
-    if (numeric !== undefined) return formatNumber(numeric);
+    if (numeric !== undefined) return isPowerFactorMetric(context) ? formatPowerFactor(numeric) : formatNumber(numeric);
     try {
       return JSON.stringify(value);
     } catch {

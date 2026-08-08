@@ -2,9 +2,9 @@
 
 ## 1. Overview
 
-BIOT Web is a browser-based telemetry console for BIOT/ESP32 devices. It supports secure login, site-scoped fleet monitoring, per-device analysis, historical visualization, alarms, analytics, CSV export, alarm acknowledgement, and basic local user management.
+BIOT Web is a browser-based telemetry console for BIOT/ESP32 devices. It supports browser-local login, client-side site-scoped fleet monitoring, per-device analysis, historical visualization, alarms, analytics, CSV export, alarm acknowledgement, and basic local user management. The current authentication and site filtering are suitable for controlled/demo deployments, not server-enforced production security.
 
-This document reflects branch `NewUI_withMeter`.
+This document reflects branch `NewUI_withMeter_08_08_2026`.
 
 ## 2. Objectives
 
@@ -61,17 +61,22 @@ FR-002 Role Access
 
 FR-003 Dashboard
 - System shall show total devices, online, good, and issue counts.
-- System shall show realtime feed cards for all available live items visible to the current site.
-- System shall show fleet health pie breakdown.
+- System shall count each normalized `deviceId` once and derive live device membership only from `RealTimeDataMonitor`.
+- System shall show realtime feed cards for all current realtime devices visible to the active site.
+- System shall show Online, Good, and Issue values in the fleet health breakdown. Online is a connectivity count and can overlap the mutually exclusive Good/Issue health categories.
 - System shall display realtime refresh copy as `auto 5s` or `auto-refresh 5s`.
 - System shall render a meter-focused dashboard variant for energy sites with grouped KPI cards and direct meter navigation.
 
 FR-004 Device List
-- System shall show all discovered devices visible to the active site.
+- System shall show unique devices present in `RealTimeDataMonitor` and visible to the active site.
+- Historical `IoTReadings` rows shall not recreate a device that is absent from `RealTimeDataMonitor`.
 - System shall allow filter by `all`, `online`, `good`, `issue`.
 - System shall display wifi and decoded telemetry parameter cards per device for general telemetry sites.
 - System shall display shift production donut summaries for `type_002` devices when shift count data is available.
 - System shall display grouped energy KPI cards for energy-meter devices when energy metrics are available.
+- System shall display total kW/kVA separately from maximum-demand kW/kVA in the Power card.
+- System shall display `meter_kvarh_lag` and `meter_kvarh_lead` together in a dedicated Reactive Energy card.
+- System shall hide the Reactive Energy card when neither Lag nor Lead kVArh is available.
 - System shall navigate to device detail page on device selection.
 - System shall display realtime refresh copy as `auto-refresh 5s`.
 - System shall show an `ACK` action for active open alarms when the backend alarm row is still open and the device is online.
@@ -96,6 +101,7 @@ FR-006 Graph Page
 - System shall format metric values to two decimals in summaries/tooltips.
 - System shall display live refresh copy as `auto-refresh 5s`.
 - System shall provide preset-driven energy chart selection for energy-meter sites.
+- System shall include maximum-demand kW/kVA in the Active Power preset and Lag/Lead kVArh in the Energy preset when available.
 - System shall support timeline zoom and pan interactions.
 
 FR-007 Alarms
@@ -131,6 +137,11 @@ DR-001 System shall read telemetry from AWS endpoint response sections:
 - `ESP32_Alarms`
 - Alarm acknowledgement posts shall target `/alarms/ack`.
 
+DR-001A Device membership
+- `RealTimeDataMonitor` is authoritative for Dashboard, Devices, Fleet Health, navigation history prefetch, and current device totals.
+- `IoTReadings` may fill missing fields only for a matching realtime `deviceId`.
+- `IoTReadings` remains the source for explicit history, analytics calculations, and CSV export.
+
 DR-002 System shall normalize mixed payload envelopes:
 - Lambda `body` string wrapper.
 - DynamoDB typed attribute maps.
@@ -141,6 +152,11 @@ DR-003 System shall support both environmental metrics and press metrics:
 - `Press/Phase N Amps` extraction.
 - decoded `parameters` arrays and JSON payload parameter objects.
 - production count aliases for Shift 1, Shift 2, and Shift 3.
+
+DR-003A System shall support PQM-16 energy parameters:
+- `meter_max_demand_kw` and `meter_max_demand_kva` as distinct maximum-demand readings.
+- `meter_kvarh_lag` and `meter_kvarh_lead` as Lag/Lead reactive-energy readings.
+- Missing optional meter parameters shall not create empty Reactive Energy cards or break chart presets.
 
 DR-004 System shall support history filters by:
 - `deviceId`
@@ -185,7 +201,6 @@ NFR-004 Security (Current Baseline)
 
 NFR-005 Compatibility
 - Desktop top navigation and mobile drawer navigation supported.
-- Desktop top navigation and mobile drawer navigation supported.
 - Site-specific dashboard and device layouts supported.
 - Modern Chromium/Edge/Firefox expected.
 
@@ -207,5 +222,5 @@ NFR-005 Compatibility
 - History queries return same-day and multi-day data ranges reliably.
 - CSV export contains data for selected device/date filters using IST day boundaries.
 - Device status does not flap offline on minor single-cycle delays.
-- Energy site routes show KPI cards and grouped energy charts for `type_003` devices.
+- Energy site routes show grouped KPI cards and charts for `type_003` devices, including conditional Reactive Energy display and the extended Power/Energy presets.
 - Alarm ACK triggers backend request and refreshes alarms/dashboard/realtime queries.

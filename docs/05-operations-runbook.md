@@ -1,10 +1,11 @@
 # Operations Runbook
 
-Branch covered: `NewUI_withMeter`.
+Branch covered: `NewUI_withMeter_08_08_2026`.
 
 ## 1. Daily Operational Checks
 
 - Verify dashboard loads and device counts appear.
+- Verify totals match unique site-scoped IDs in `RealTimeDataMonitor`; historical-only IDs must not appear as offline devices.
 - Confirm realtime pages update every ~5 seconds.
 - Confirm visible realtime labels show `auto 5s` / `auto-refresh 5s`.
 - Confirm graph history for same-day and multi-day ranges.
@@ -18,9 +19,11 @@ Branch covered: `NewUI_withMeter`.
 
 UI indicators:
 - Device status (online/alarm/offline).
+- Fleet Health displays Online, Good, and Issue. Online can overlap Good/Issue because it measures connectivity rather than health category.
 - Last seen timestamp on live pages.
 - Uptime chart and anomaly queue in analytics.
 - Site-branded meter KPI cards for the BlackStar Products energy site.
+- Dedicated Reactive Energy card when `meter_kvarh_lag` or `meter_kvarh_lead` is present.
 
 Operational interpretation:
 - Repeated `stale/offline` bursts may indicate connectivity issues.
@@ -58,6 +61,19 @@ Issue: no devices appear after login
 - Cause: fast realtime payload may be missing `siteId` or `deviceType`, or backend rows do not match the authenticated site policy.
 - Action: verify a full fetch succeeds and that returned rows contain matching `siteId` plus allowed `deviceType` values for the selected site.
 
+Issue: a deleted device still appears
+- Device membership comes only from `RealTimeDataMonitor`; history does not restore deleted devices.
+- Verify the deployed bundle is current, wait for the next successful 5-second refresh, and confirm the backend no longer returns the device in `RealTimeDataMonitor`.
+- Historical records may remain available in Graph/Export without causing the device to reappear on Dashboard or Devices.
+
+Issue: Reactive Energy card is missing
+- Cause: neither `meter_kvarh_lag` nor `meter_kvarh_lead` is present as a numeric decoded parameter in the current realtime row.
+- Action: inspect the API payload `parameters` array, confirm the exact keys and `kVArh` values are published, then verify the realtime endpoint contains the updated firmware record.
+
+Issue: Reactive Energy card shows zero
+- Zero is a valid numeric reading and does not indicate a UI extraction failure.
+- Compare the API payload value with the physical meter Lag/Lead display and firmware serial output.
+
 Issue: ACK button does not appear for an alarming device
 - Cause: ACK is shown only when the device is online, the current row indicates common alarm, and the alarm lifecycle builder still sees an open alarm row for that device.
 - Action: verify `ESP32_Alarms` includes an unclosed `alarmFlag=1` row for the device and no later matching clear row.
@@ -66,7 +82,7 @@ Issue: GoDaddy deployment shows old UI after upload
 - Cause: old `index.html` or old `assets/` bundle is still being served, or browser/CDN cache is stale.
 - Action: delete old `public_html/index.html` and `public_html/assets/`, upload the new `dist` contents, then hard refresh.
 - Verify page source references the latest hashed JS/CSS files from the current `dist/index.html`.
-- If auto-deploy is enabled, verify it deploys branch `NewUI_withMeter`.
+- If auto-deploy is enabled, verify it deploys branch `NewUI_withMeter_08_08_2026`.
 
 ## 4. Security and Compliance Notes
 
@@ -100,7 +116,7 @@ Before release:
 - run build.
 - run smoke checklist.
 - verify docs version/date updates.
-- verify current branch name references `NewUI_withMeter` where applicable.
+- verify current branch name references `NewUI_withMeter_08_08_2026` where applicable.
 
 After release:
 - monitor telemetry loading and online-state stability.

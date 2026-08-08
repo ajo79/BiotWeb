@@ -41,7 +41,11 @@ export default function TelemetryParameterList({
           className={`flex gap-2 text-sm ${rightAlign ? "justify-end text-right" : "justify-between"}`}
         >
           <span className="text-slate-600">{formatParameterLabel(param)}</span>
-          <span className="font-semibold text-slate-900">{formatParameterValue(param.value)}</span>
+          <span className="font-semibold text-slate-900">{formatParameterValue(param.value, {
+            key: param.key,
+            label: param.label,
+            unit: param.unit,
+          })}</span>
         </div>
       ))}
       {hasMore && (

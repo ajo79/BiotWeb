@@ -1,6 +1,6 @@
 # System Architecture
 
-Branch covered: `NewUI_withMeter`.
+Branch covered: `NewUI_withMeter_08_08_2026`.
 
 ## 1. Technology Stack
 
@@ -68,9 +68,15 @@ Navigation behavior:
 2. Hook invokes API function in `client.ts`.
 3. `client.ts` fetches endpoint text via Axios.
 4. Response is normalized (Lambda body unwrap, Dynamo unmarshal, payload flatten).
-5. UI-ready objects returned to hooks.
+5. Realtime rows are enriched only from matching history rows, deduplicated by normalized `deviceId`, and annotated with health state.
 6. Page renders cards/charts/tables from normalized objects.
 7. `accessPolicy.ts` filters row visibility by authenticated site and allowed device types before page rendering.
+
+Device membership boundary:
+- `RealTimeDataMonitor` is the sole inventory source for Dashboard, Devices, Fleet Health, Analytics device scope, and Shell prefetch.
+- `IoTReadings` cannot introduce a device ID into live UI surfaces.
+- A matching latest `IoTReadings` row may enrich missing realtime metadata or parameter fields.
+- History-only devices remain accessible to explicit history/export workflows but are not displayed as offline live devices.
 
 ## 5. Polling and Query Behavior
 
@@ -101,7 +107,7 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 `src/api/client.ts`
 - API endpoint handling.
 - Multi-format payload normalization.
-- Realtime merge logic.
+- Realtime-only device membership, history enrichment for matching IDs, and case-normalized latest-record deduplication.
 - History pagination and filtering (`limit` support, multi-page cursor loop).
 - Online-state machine.
 - Alarm acknowledgement POST helper.
@@ -121,6 +127,17 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 - Flatten nested payloads.
 - Decode telemetry parameter arrays and parameter-like payload objects.
 - Extract env, press, numeric metrics, formatted labels, and shift count values.
+
+`src/utils/energyMeter.ts`
+- Classifies decoded numeric metrics into Consumption, Power, Reactive Power, Reactive Energy, Voltage, Current, Power Quality, and Runtime groups.
+- Keeps maximum-demand kW/kVA distinct from total kW/kVA through explicit token matching.
+- Resolves total, Lag, and Lead kVArh independently and omits empty groups when older rows do not contain the relevant metrics.
+- Builds Voltage, Current, Active Power, Reactive Power, Power Quality, Energy, and Runtime chart presets. Active Power includes maximum demand; Energy includes total/Lag/Lead kVArh; Runtime includes load hours, no-load hours, and RPM.
+- Identifies meter configuration parameters so they remain available to normalization and exports but are excluded from operational graph selectors.
+
+`src/components/EnergyKpiCard.tsx` and `src/components/EnergyMetricGroupCard.tsx`
+- Render the energy groups in dashboard/device and overview contexts.
+- Use a dedicated rose/fuchsia/purple tone for Reactive Energy.
 
 `src/components/TelemetryParameterList.tsx`
 - Shared decoded parameter list used by Dashboard and Devices.
@@ -151,6 +168,8 @@ Pages consume `_onlineStatus` first and only use timestamp fallback when absent.
 - Enable threshold lines only for phase amperage metric selections on non-energy pages.
 - Use oscilloscope-style zoom/pan time controls.
 - Render grouped energy presets and energy panels for meter-focused sites.
+- Include maximum-demand series in Active Power charts, total kVAr in Reactive Power, total/Lag/Lead kVArh in Energy, and load/no-load hours plus RPM in Runtime.
+- Configuration values remain normalized/exportable but are hidden from Device Detail and operational graphs.
 
 `src/pages/DashboardPage.tsx` and `src/pages/DevicesPage.tsx`
 - Switch layout and component composition based on site feature flags.

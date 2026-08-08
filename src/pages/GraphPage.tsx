@@ -44,6 +44,7 @@ import {
   buildEnergyMetricGroups,
   buildEnergyPresetsFromMetricOptions,
   getDefaultEnergyPresetMetricIds,
+  isMeterConfigurationMetric,
   type EnergyPreset,
 } from "../utils/energyMeter";
 
@@ -350,7 +351,10 @@ export default function GraphPage() {
     [modeData, visibleStartTs, visibleEndTs]
   );
 
-  const metricOptions = useMemo(() => deriveMetricOptions(modeData), [modeData]);
+  const metricOptions = useMemo(() => {
+    const options = deriveMetricOptions(modeData);
+    return isEnergySite ? options.filter((metric) => !isMeterConfigurationMetric(metric)) : options;
+  }, [modeData, isEnergySite]);
   const energyPresets = useMemo(() => buildEnergyPresetsFromMetricOptions(metricOptions), [metricOptions]);
 
   useEffect(() => {
@@ -392,7 +396,16 @@ export default function GraphPage() {
     [visibleStartTs, visibleEndTs]
   );
 
-  const selected = filterRowsForSession(realtime.data?.items ?? [], state).find((d) => d.deviceId === selectedId);
+  const selected = useMemo(() => {
+    const inventoryItem = filterRowsForSession(realtime.data?.items ?? [], state).find(
+      (item) => String(item?.deviceId ?? "").trim() === selectedId
+    );
+    const realtimeItem = liveItems.find(
+      (item) => String(item?.deviceId ?? "").trim() === selectedId
+    );
+    if (inventoryItem && realtimeItem) return { ...inventoryItem, ...realtimeItem };
+    return realtimeItem ?? inventoryItem;
+  }, [realtime.data?.items, liveItems, selectedId, state]);
   const status = selected ? classify(selected) : { online: true, commonIssue: false };
   const lastSeenTs = coerceEpochMs(selected?.ts);
   const lastSeen = Number.isFinite(lastSeenTs) ? new Date(lastSeenTs as number).toLocaleString() : "unknown";
@@ -478,33 +491,6 @@ export default function GraphPage() {
 
   return (
     <div className="space-y-4">
-      {isEnergySite && selected && (
-        <div className="rounded-[2rem] border border-slate-200 bg-[linear-gradient(135deg,_#ffffff,_#f8fafc)] p-5 shadow-ambient">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Energy Analysis</p>
-              <h2 className="mt-2 text-2xl font-semibold text-slate-900">{selected.deviceName || selected.deviceId}</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Preset-driven charting for voltage, current, power factor, and consumption metrics.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-              Status: <span className={`font-semibold ${status.online ? "text-emerald-700" : "text-rose-700"}`}>{status.online ? "Online" : "Offline"}</span>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 lg:grid-cols-5">
-            {selectedGroups.map((group) => (
-              <EnergyMetricGroupCard key={group.key} group={group} />
-            ))}
-          </div>
-
-          <div className="mt-4">
-            <EnergyPresetPicker presets={energyPresets} activePresetId={selectedPresetId} onSelect={applyPreset} />
-          </div>
-        </div>
-      )}
-
       <div className="glass rounded-2xl p-4 border border-white/5 shadow-ambient flex flex-wrap gap-3 items-end">
         <div className="flex items-center gap-2 text-sm">
           {[{ key: "live", label: "Live" }, { key: "history", label: "History" }].map((chip) => (
@@ -623,6 +609,33 @@ export default function GraphPage() {
           </div>
         )}
       </div>
+
+      {isEnergySite && selected && (
+        <div className="rounded-[2rem] border border-slate-200 bg-[linear-gradient(135deg,_#ffffff,_#f8fafc)] p-5 shadow-ambient">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Energy Analysis</p>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-900">{selected.deviceName || selected.deviceId}</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Preset-driven charting for voltage, current, power factor, and consumption metrics.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+              Status: <span className={`font-semibold ${status.online ? "text-emerald-700" : "text-rose-700"}`}>{status.online ? "Online" : "Offline"}</span>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-5">
+            {selectedGroups.map((group) => (
+              <EnergyMetricGroupCard key={group.key} group={group} />
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <EnergyPresetPicker presets={energyPresets} activePresetId={selectedPresetId} onSelect={applyPreset} />
+          </div>
+        </div>
+      )}
 
       <div className="glass rounded-2xl p-5 border border-white/5 shadow-ambient">
         <div className="flex items-center justify-between mb-3">

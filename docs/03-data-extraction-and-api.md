@@ -1,6 +1,6 @@
 # Data Extraction and API Documentation
 
-Branch covered: `NewUI_withMeter`.
+Branch covered: `NewUI_withMeter_08_08_2026`.
 
 ## 1. Endpoint
 
@@ -78,7 +78,12 @@ Shift production metrics:
 
 Energy meter metrics:
 - Extracted from the generic numeric parameter pipeline.
-- Grouped heuristically into energy, power, voltage, current, and quality presets/cards by `src/utils/energyMeter.ts`.
+- Grouped into Consumption, Power, Reactive Power, Reactive Energy, Voltage, Current, Power Quality, and Runtime cards by `src/utils/energyMeter.ts`.
+- `meter_max_demand_kw` and `meter_max_demand_kva` are displayed in the Power card and Active Power graph preset without being confused with total kW/kVA.
+- `meter_kvarh_total`, `meter_kvarh_lag`, and `meter_kvarh_lead` are displayed in the dedicated Reactive Energy card and included in the Energy graph preset.
+- `meter_kvar_total` has a Reactive Power preset. Load hours, no-load hours, and RPM have a Runtime preset.
+- Empty groups are omitted when older rows lack corrected parameters; missing or malformed samples remain chart gaps rather than becoming fabricated zeroes.
+- Network, CT/PT, Modbus address, literal baud rate, and parity remain normalized/exportable but are hidden from Device Detail and operational graph selectors.
 - Used heavily for `type_003` meter devices on the BlackStar Products site.
 
 ## 5. Schema Validation
@@ -92,13 +97,19 @@ Pages prefer `_schemaValid` rows to avoid accidental non-telemetry records.
 ## 6. Realtime Merge Strategy
 
 Inputs:
-- `RealTimeDataMonitor` (preferred realtime source)
-- `IoTReadings` (fallback values when realtime fields are missing)
+- `RealTimeDataMonitor` (authoritative live device membership)
+- `IoTReadings` (enrichment values for matching realtime device IDs)
 
 Merge behavior:
 - For each realtime device, fill missing fields from latest IoT reading for same device.
-- Include reading-only devices not present in realtime list.
+- Normalize `deviceId` case/whitespace and keep one latest realtime record per device.
+- Discard history-only device IDs from realtime results; deleting a realtime entry therefore removes that device from Dashboard and Devices after the next successful poll.
+- Return an empty live device list when both fast and full realtime reads contain no devices, even if history remains populated.
 - If fast status payloads omit `siteId` or `deviceType`, the client falls back to full fetch so access-policy filtering does not empty the UI.
+
+Result contract:
+- `items` and `realtimeItems` contain the same unique realtime device membership after enrichment and health annotation.
+- `summary` is calculated from that displayed realtime collection and never from history-only records.
 
 ## 7. Robust Online/Offline Logic
 
@@ -188,6 +199,10 @@ Energy-specific charting:
 2. Select default preset metrics for energy-site graph page.
 3. Split device-detail charts into separate energy panels by preset/group.
 4. Disable manual threshold overlays on energy grouped panels.
+5. Active Power resolves total kW/kVA plus maximum-demand kW/kVA.
+6. Energy resolves total kWh/kVAh plus total/Lag/Lead kVArh when those parameters exist in live/history rows.
+7. Reactive Power resolves total kVAr; Runtime resolves load hours, no-load hours, and RPM.
+8. Configuration selector labels map network `0/1/2` to `3P-3W / 3P-4W / 1P-2W` and parity `0/1/2` to `None / Even / Odd`.
 
 ## 12. API Error Handling
 

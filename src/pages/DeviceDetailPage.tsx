@@ -45,6 +45,7 @@ import EnergyMetricGroupCard from "../components/EnergyMetricGroupCard";
 import {
   buildEnergyMetricGroups,
   buildEnergyPresetsFromMetricOptions,
+  isMeterConfigurationMetric,
 } from "../utils/energyMeter";
 
 const HEARTBEAT_THRESHOLD_MS = 10_000;
@@ -313,7 +314,10 @@ export default function DeviceDetailPage() {
     [seriesData, visibleStartTs, visibleEndTs]
   );
 
-  const metricOptions = useMemo(() => deriveMetricOptions(seriesData), [seriesData]);
+  const metricOptions = useMemo(() => {
+    const options = deriveMetricOptions(seriesData);
+    return isEnergySite ? options.filter((metric) => !isMeterConfigurationMetric(metric)) : options;
+  }, [seriesData, isEnergySite]);
   const energyPresets = useMemo(() => buildEnergyPresetsFromMetricOptions(metricOptions), [metricOptions]);
 
   useEffect(() => {

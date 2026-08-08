@@ -7,10 +7,12 @@ type Props = {
 
 const toneAccent = {
   consumption: "from-cyan-500 to-sky-600",
+  reactive: "from-rose-600 via-fuchsia-600 to-purple-700",
   power: "from-slate-900 via-indigo-900 to-blue-900",
   voltage: "from-indigo-500 to-violet-600",
   current: "from-blue-500 to-cyan-600",
   quality: "from-emerald-500 to-teal-600",
+  runtime: "from-orange-700 via-red-700 to-rose-800",
 } as const;
 
 const sevenSegClass =
@@ -24,21 +26,13 @@ export default function EnergyMetricGroupCard({ group, subtitle }: Props) {
       <div className={`bg-gradient-to-r ${toneAccent[group.tone]} px-4 py-3 text-white`}>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.22em]">{group.title}</div>
-            {subtitle ? <div className="mt-1 text-[10px] text-white/80">{subtitle}</div> : null}
+            <div className="text-sm font-bold uppercase tracking-[0.22em]">{group.title}</div>
           </div>
           <div className="h-7 w-7 rounded-full border border-white/25 bg-white/10" />
         </div>
       </div>
 
       <div className="bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.78),_transparent_28%),linear-gradient(180deg,#f8fbff_0%,#eef4ea_100%)] px-4 py-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Display View</div>
-          <div className="rounded-full border border-slate-200 bg-white/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Meter
-          </div>
-        </div>
-
         {group.layout === "phase_table" ? (
           visibleMetrics.length ? (
             <div className="space-y-2">
@@ -58,12 +52,12 @@ export default function EnergyMetricGroupCard({ group, subtitle }: Props) {
         ) : visibleMetrics.length ? (
           <div className="space-y-2 rounded-2xl border border-slate-200/80 bg-white/45 p-3">
             {visibleMetrics.map((metric) => (
-              <div key={metric.id ?? metric.label} className="grid grid-cols-[1fr_auto] items-center gap-2">
+              <div key={metric.id ?? metric.label} className="grid grid-cols-[1fr_auto] items-end gap-2">
                 <span className="font-mono text-[0.72rem] uppercase tracking-[0.12em] text-slate-600">{metric.label}</span>
-                <span className={`${sevenSegClass} text-[1.6rem] leading-none text-indigo-700`}>
-                  {metric.value}
-                  {metric.unit ? <span className="ml-1 text-[0.68rem] uppercase text-slate-500">{metric.unit}</span> : null}
-                </span>
+                <div className="flex items-end justify-end gap-2">
+                  <span className={`${sevenSegClass} text-[1.6rem] leading-none text-indigo-700`}>{metric.value}</span>
+                  <span className="font-mono text-[0.68rem] uppercase tracking-[0.1em] text-slate-500">{metric.unit ?? ""}</span>
+                </div>
               </div>
             ))}
           </div>

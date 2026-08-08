@@ -2,7 +2,7 @@
 
 Use this checklist before release.
 
-Branch covered: `NewUI_withMeter`.
+Branch covered: `NewUI_withMeter_08_08_2026`.
 
 ## 1. Build and App Boot
 
@@ -24,16 +24,24 @@ Branch covered: `NewUI_withMeter`.
 ## 3. Dashboard
 
 - Metric cards render (`Total`, `Online`, `Good`, `Issue`).
+- Fleet Health renders Online, Good, and Issue with distinct legend colors.
+- Total equals the unique site-scoped `deviceId` count in `RealTimeDataMonitor`.
+- A device present only in `IoTReadings` is absent from Dashboard, Fleet Health, and totals.
 - Realtime feed updates approximately every 5 seconds.
 - Realtime feed label shows `auto 5s`.
 - Decoded telemetry parameters render with show-more behavior when more than four values exist.
 - Pie chart renders when data exists.
 - Card navigation to `/devices` filters works.
 - For BlackStar Products site, dashboard shows grouped meter KPI cards and `Live Meter Feed`.
+- Power card shows maximum-demand kW/kVA without replacing total kW/kVA.
+- Reactive Energy card shows total, Lag, and Lead kVArh when any parameter is available.
+- Reactive Energy card is absent when all three parameters are missing.
 
 ## 4. Devices Page
 
 - Device cards render with ID/name.
+- Each realtime `deviceId` renders once even if realtime/history contain duplicate telemetry rows.
+- Removing a device from `RealTimeDataMonitor` removes its card after the next successful poll even when its history remains.
 - Filters `all/online/good/issue` produce correct subsets.
 - Page label shows `auto-refresh 5s`.
 - Offline cards show offline panel.
@@ -41,6 +49,7 @@ Branch covered: `NewUI_withMeter`.
 - `type_002` devices show Shift Production donut when shift count values exist.
 - Clicking card opens `/devices/:id`.
 - BlackStar Products devices render grouped energy metric cards when energy metrics are present.
+- Reactive Energy uses the dedicated rose/fuchsia/purple header and remains legible on desktop and mobile.
 - ACK button appears only for eligible open alarms and shows success/failure feedback.
 
 ## 5. Device Detail
@@ -54,6 +63,7 @@ Branch covered: `NewUI_withMeter`.
 - Offline message appears when device not live.
 - Unauthorized direct device URL for another site redirects back to `/devices`.
 - Energy-site device detail splits charts into separate grouped energy panels.
+- Meter configuration values do not appear on Device Detail and do not create operational charts.
 
 ## 6. Graph Page
 
@@ -65,6 +75,10 @@ Branch covered: `NewUI_withMeter`.
 - Tooltip values are shown with two decimals.
 - Stats (min/max/avg) render correctly.
 - Energy-site graph page shows preset chips and grouped energy overview cards.
+- Active Power preset includes maximum-demand kW/kVA when available.
+- Energy preset includes total/Lag/Lead kVArh when available and tolerates gaps in older history.
+- Reactive Power graphs total kVAr; Runtime graphs load/no-load hours and RPM.
+- Configuration metrics are excluded from manual operational metric buttons.
 - Zoom, pan slider, and mouse-wheel timeline zoom work in both graph flows.
 
 ## 7. Alarms
@@ -86,6 +100,7 @@ Branch covered: `NewUI_withMeter`.
 ## 9. Analytics
 
 - Summary cards render values.
+- Uptime and anomaly calculations may use history, but only current realtime device IDs participate in Analytics device scope and totals.
 - Uptime chart renders with percentage values.
 - Signal indicators (wifi/rssi) display correctly.
 - Anomaly list renders or shows empty state.
